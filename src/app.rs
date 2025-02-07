@@ -1,20 +1,34 @@
+use std::sync::{Arc, Mutex};
+
+use egui::{panel::TopBottomSide, Ui};
+
+use crate::{
+    core::Param,
+    http::{self, HttpMethod, HttpRequest, HttpResponse},
+    widgets,
+};
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    // Example stuff:
-    label: String,
-
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+    url: String,
+    method: HttpMethod,
+    query: Vec<Param>,
+    headers: Vec<Param>,
+    body: String,
+    response: Arc<Mutex<Option<HttpResponse>>>,
 }
 
 impl Default for App {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+            url: String::new(),
+            body: String::new(),
+            method: HttpMethod::Get,
+            query: vec![Default::default()],
+            headers: vec![Default::default()],
+            response: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -46,25 +60,89 @@ impl eframe::App for App {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
             ui.heading("Hello world!");
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
+            egui::Grid::new("request_params")
+                .spacing(egui::Vec2::splat(6.0))
+                .min_col_width(70.0)
+                .num_columns(2)
+                .show(ui, |ui| {
+                    ui.label("URL:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.url)
+                            .hint_text("http://httpbin.org/get"),
+                    );
+                    ui.end_row();
+                    ui.label("Method:");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.method, HttpMethod::Get, "GET");
+                        ui.selectable_value(&mut self.method, HttpMethod::Head, "HEAD");
+                        ui.selectable_value(&mut self.method, HttpMethod::Post, "POST");
+                    });
+                    ui.end_row();
 
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
+                    if ui.button("Send").clicked() {
+                        self.execute_http(ctx);
+                    }
+                });
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label("query params");
+            widgets::key_value_editor("query_params", &mut self.query, ui);
+        });
+        let bottom_panel = egui::TopBottomPanel::new(TopBottomSide::Bottom, "bottom_bar")
+            .resizable(true)
+            .height_range(egui::Rangef::new(100.0, 300.0));
+
+        bottom_panel.show(ctx, |ui| {
+            ui.heading("Response");
+            ui.vertical(|ui| {
+                ui.label(format!("query: {:?}", self.query));
+                ui.label(format!("URL: {}", self.url));
+                ui.label(format!("Method: {:?}", self.method));
+                ui.label(format!("Body: {}", self.body));
+                ui.separator();
+
+                let store = self.response.clone();
+                let resp = &*store.lock().unwrap();
+                if let Some(resp) = resp {
+                    ui.label(format!("Status: {} {}", resp.status, resp.status_text));
+                    ui.label(format!(
+                        "Response body: {:?}",
+                        std::str::from_utf8(&resp.body)
+                    ));
+                } else {
+                    ui.label("No response");
+                }
+            });
+            // ui.add(
+            //     egui::TextEdit::multiline(&mut self.response)
+            //         .desired_width(f32::INFINITY)
+            //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
+            // );
+        });
+    }
+}
+
+impl App {
+    fn execute_http(&mut self, egui_ctx: &egui::Context) {
+        let input = HttpRequest {
+            url: self.url.clone(),
+            method: self.method,
+            query: vec![],
+            headers: vec![],
+            body: None,
+        };
+
+        let response_store = self.response.clone();
+        http::execute(input, move |result| match result {
+            Ok(resp) => {
+                *response_store.lock().unwrap() = Some(resp);
             }
-
-            ui.separator();
-
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                egui::warn_if_debug_build(ui);
-            });
+            Err(_) => {}
         });
     }
 }
