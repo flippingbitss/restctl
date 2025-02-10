@@ -1,11 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use egui::{panel::TopBottomSide, Ui};
+use egui::{panel::TopBottomSide, CornerRadius, Shadow};
+use egui_tiles::Tree;
 
 use crate::{
     core::Param,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
-    widgets,
+    widgets::key_value_editor,
 };
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -18,10 +19,70 @@ pub struct App {
     headers: Vec<Param>,
     body: String,
     response: Arc<Mutex<Option<HttpResponse>>>,
+
+    tree: Tree<MyPane>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+enum PaneKind {
+    Query,
+    Headers,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct MyPane {
+    title: String,
+    kind: PaneKind,
+}
+
+struct TreeBehavior<'a> {
+    query: &'a mut Vec<Param>,
+    headers: &'a mut Vec<Param>,
+}
+
+impl<'a> egui_tiles::Behavior<MyPane> for TreeBehavior<'a> {
+    fn pane_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _: egui_tiles::TileId,
+        pane: &mut MyPane,
+    ) -> egui_tiles::UiResponse {
+        let mut values = match pane.kind {
+            PaneKind::Query => &mut self.query,
+            PaneKind::Headers => &mut self.headers,
+        };
+        egui::Frame::window(ui.style())
+            .shadow(Shadow::NONE)
+            .corner_radius(CornerRadius::ZERO)
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(format!("{}", pane.title)).strong());
+                ui.separator();
+                key_value_editor(&pane.title, &mut values, ui);
+            });
+        egui_tiles::UiResponse::None
+    }
+
+    fn tab_title_for_pane(&mut self, pane: &MyPane) -> egui::WidgetText {
+        pane.title.clone().into()
+    }
 }
 
 impl Default for App {
     fn default() -> Self {
+        let tree = Tree::new_grid(
+            "tiles_tree",
+            vec![
+                MyPane {
+                    title: "Headers".to_owned(),
+                    kind: PaneKind::Headers,
+                },
+                MyPane {
+                    title: "Query Params".to_owned(),
+                    kind: PaneKind::Query,
+                },
+            ],
+        );
+
         Self {
             url: String::new(),
             body: String::new(),
@@ -29,6 +90,7 @@ impl Default for App {
             query: vec![Default::default()],
             headers: vec![Default::default()],
             response: Arc::new(Mutex::new(None)),
+            tree,
         }
     }
 }
@@ -42,7 +104,7 @@ impl App {
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            // return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
 
         Default::default()
@@ -59,6 +121,14 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
+        //
+
+        ctx.debug_painter().rect_stroke(
+            ctx.screen_rect(),
+            CornerRadius::ZERO,
+            ctx.style().visuals.window_stroke(),
+            egui::StrokeKind::Inside,
+        );
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
@@ -89,10 +159,6 @@ impl eframe::App for App {
                 });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label("query params");
-            widgets::key_value_editor("query_params", &mut self.query, ui);
-        });
         let bottom_panel = egui::TopBottomPanel::new(TopBottomSide::Bottom, "bottom_bar")
             .resizable(true)
             .height_range(egui::Rangef::new(100.0, 300.0));
@@ -124,16 +190,34 @@ impl eframe::App for App {
             //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
             // );
         });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let mut behavior = TreeBehavior {
+                query: &mut self.query,
+                headers: &mut self.headers,
+            };
+            self.tree.ui(&mut behavior, ui);
+        });
     }
 }
 
 impl App {
-    fn execute_http(&mut self, egui_ctx: &egui::Context) {
+    fn execute_http(&mut self, _: &egui::Context) {
         let input = HttpRequest {
             url: self.url.clone(),
             method: self.method,
-            query: vec![],
-            headers: vec![],
+            query: self
+                .query
+                .iter()
+                .filter(|p| p.enabled)
+                .map(|p| (p.key.clone(), p.value.clone()))
+                .collect(),
+            headers: self
+                .query
+                .iter()
+                .filter(|p| p.enabled)
+                .map(|p| (p.key.clone(), p.value.clone()))
+                .collect(),
             body: None,
         };
 
