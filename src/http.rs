@@ -5,7 +5,7 @@ pub enum HttpMethod {
     Head,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct HttpRequest {
     pub url: String,
     pub method: HttpMethod,

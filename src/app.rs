@@ -6,7 +6,10 @@ use egui_tiles::Tree;
 use crate::{
     core::Param,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
-    widgets::key_value_editor,
+    widgets::{
+        RequestPane, RequestPaneKind, RequestTreeBehavior, ResponsePane, ResponsePaneKind,
+        ResponseTreeBehavior,
+    },
 };
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -20,65 +23,36 @@ pub struct App {
     body: String,
     response: Arc<Mutex<Option<HttpResponse>>>,
 
-    tree: Tree<MyPane>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-enum PaneKind {
-    Query,
-    Headers,
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct MyPane {
-    title: String,
-    kind: PaneKind,
-}
-
-struct TreeBehavior<'a> {
-    query: &'a mut Vec<Param>,
-    headers: &'a mut Vec<Param>,
-}
-
-impl<'a> egui_tiles::Behavior<MyPane> for TreeBehavior<'a> {
-    fn pane_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        _: egui_tiles::TileId,
-        pane: &mut MyPane,
-    ) -> egui_tiles::UiResponse {
-        let mut values = match pane.kind {
-            PaneKind::Query => &mut self.query,
-            PaneKind::Headers => &mut self.headers,
-        };
-        egui::Frame::window(ui.style())
-            .shadow(Shadow::NONE)
-            .corner_radius(CornerRadius::ZERO)
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(format!("{}", pane.title)).strong());
-                ui.separator();
-                key_value_editor(&pane.title, &mut values, ui);
-            });
-        egui_tiles::UiResponse::None
-    }
-
-    fn tab_title_for_pane(&mut self, pane: &MyPane) -> egui::WidgetText {
-        pane.title.clone().into()
-    }
+    request_tree: Tree<RequestPane>,
+    response_tree: Tree<ResponsePane>,
 }
 
 impl Default for App {
     fn default() -> Self {
-        let tree = Tree::new_grid(
-            "tiles_tree",
+        let request_tree = Tree::new_vertical(
+            "request_tree",
             vec![
-                MyPane {
+                RequestPane {
                     title: "Headers".to_owned(),
-                    kind: PaneKind::Headers,
+                    kind: RequestPaneKind::Headers,
                 },
-                MyPane {
+                RequestPane {
                     title: "Query Params".to_owned(),
-                    kind: PaneKind::Query,
+                    kind: RequestPaneKind::Query,
+                },
+            ],
+        );
+
+        let response_tree = Tree::new_tabs(
+            "response_tree",
+            vec![
+                ResponsePane {
+                    title: "Headers".to_owned(),
+                    kind: ResponsePaneKind::Headers,
+                },
+                ResponsePane {
+                    title: "Raw Body".to_owned(),
+                    kind: ResponsePaneKind::RawBody,
                 },
             ],
         );
@@ -90,7 +64,8 @@ impl Default for App {
             query: vec![Default::default()],
             headers: vec![Default::default()],
             response: Arc::new(Mutex::new(None)),
-            tree,
+            response_tree,
+            request_tree,
         }
     }
 }
@@ -104,7 +79,7 @@ impl App {
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
-            // return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
 
         Default::default()
@@ -159,49 +134,65 @@ impl eframe::App for App {
                 });
         });
 
-        let bottom_panel = egui::TopBottomPanel::new(TopBottomSide::Bottom, "bottom_bar")
+        egui::TopBottomPanel::new(TopBottomSide::Bottom, "bottom_bar")
             .resizable(true)
-            .height_range(egui::Rangef::new(100.0, 300.0));
+            // .height_range(egui::Rangef::new(200.0, 300.0))
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.heading("Response");
+                    ui.vertical(|ui| {
+                        ui.label(format!("query: {:?}", self.query));
+                        ui.label(format!("URL: {}", self.url));
+                        ui.label(format!("Method: {:?}", self.method));
+                        ui.label(format!("Body: {}", self.body));
+                        ui.separator();
 
-        bottom_panel.show(ctx, |ui| {
-            ui.heading("Response");
-            ui.vertical(|ui| {
-                ui.label(format!("query: {:?}", self.query));
-                ui.label(format!("URL: {}", self.url));
-                ui.label(format!("Method: {:?}", self.method));
-                ui.label(format!("Body: {}", self.body));
-                ui.separator();
+                        let store = self.response.clone();
+                        let resp = &*store.lock().unwrap();
 
-                let store = self.response.clone();
-                let resp = &*store.lock().unwrap();
-                if let Some(resp) = resp {
-                    ui.label(format!("Status: {} {}", resp.status, resp.status_text));
-                    ui.label(format!(
-                        "Response body: {:?}",
-                        std::str::from_utf8(&resp.body)
-                    ));
-                } else {
-                    ui.label("No response");
-                }
+                        if let Some(resp) = resp {
+                            self.response_ui(resp, ui, ctx);
+                            // ui.label(format!("Status: {} {}", resp.status, resp.status_text));
+                            // ui.label(format!(
+                            //     "Response body: {:?}",
+                            //     std::str::from_utf8(&resp.body)
+                            // ));
+                        } else {
+                            ui.label("No response");
+                        }
+                    });
+                });
+                // ui.add(
+                //     egui::TextEdit::multiline(&mut self.response)
+                //         .desired_width(f32::INFINITY)
+                //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
+                // );
             });
-            // ui.add(
-            //     egui::TextEdit::multiline(&mut self.response)
-            //         .desired_width(f32::INFINITY)
-            //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
-            // );
-        });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut behavior = TreeBehavior {
+            let mut behavior = RequestTreeBehavior {
                 query: &mut self.query,
                 headers: &mut self.headers,
             };
-            self.tree.ui(&mut behavior, ui);
+            self.request_tree.ui(&mut behavior, ui);
         });
     }
 }
 
 impl App {
+    fn response_ui(&mut self, response: &HttpResponse, ui: &mut egui::Ui, ctx: &egui::Context) {
+        // let response = &*self.response.lock().unwrap();
+        // if let Some(response) = response {
+        egui::Frame::window(ui.style())
+            .shadow(Shadow::NONE)
+            .corner_radius(CornerRadius::ZERO)
+            .show(ui, |ui| {
+                let mut behavior = ResponseTreeBehavior { response };
+                self.response_tree.ui(&mut behavior, ui);
+            });
+        // }
+    }
+
     fn execute_http(&mut self, _: &egui::Context) {
         let input = HttpRequest {
             url: self.url.clone(),
@@ -209,18 +200,19 @@ impl App {
             query: self
                 .query
                 .iter()
-                .filter(|p| p.enabled)
+                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
                 .map(|p| (p.key.clone(), p.value.clone()))
                 .collect(),
             headers: self
                 .query
                 .iter()
-                .filter(|p| p.enabled)
+                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
                 .map(|p| (p.key.clone(), p.value.clone()))
                 .collect(),
             body: None,
         };
 
+        log::info!("{:?}", input);
         let response_store = self.response.clone();
         http::execute(input, move |result| match result {
             Ok(resp) => {
