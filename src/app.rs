@@ -7,6 +7,7 @@ use crate::{
     components::key_value_editor::key_value_editor,
     core::Param,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
+    state::AppState,
     tiles::{Pane, TabsView},
     widgets::{
         RequestPane, RequestPaneKind, RequestTreeBehavior, ResponsePane, ResponsePaneKind,
@@ -18,14 +19,7 @@ use crate::{
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    url: String,
-    method: HttpMethod,
-    query: Vec<Param>,
-    headers: Vec<Param>,
-    body: String,
-    response: Arc<Mutex<Option<HttpResponse>>>,
-    request_tree: Tree<RequestPane>,
-    response_tree: Tree<ResponsePane>,
+    state: AppState,
     tabs: TabsView,
 }
 
@@ -59,9 +53,9 @@ impl Default for App {
             ],
         );
 
-        let tiles = TabsView::default();
+        let tabs = TabsView::default();
 
-        Self {
+        let state = AppState {
             url: String::new(),
             body: String::new(),
             method: HttpMethod::Get,
@@ -70,8 +64,9 @@ impl Default for App {
             response: Arc::new(Mutex::new(None)),
             response_tree,
             request_tree,
-            tabs: tiles,
-        }
+        };
+
+        Self { state, tabs }
     }
 }
 
@@ -104,9 +99,18 @@ impl eframe::App for App {
 
 impl App {
     fn layout_ui(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(false)
+            .exact_height(32.0)
+            .show_separator_line(true)
+            .show(ctx, |ui| {
+                ui.heading("bottom");
+            });
+
         egui::SidePanel::left("tree").show(ctx, |ui| {
-            if ui.button("Reset").clicked() {
-                *self = Default::default();
+            ui.heading("Debug tools");
+            if ui.button("Reset tabs").clicked() {
+                self.tabs = Default::default();
             }
             self.tabs.behavior.ui(ui);
 
@@ -135,7 +139,22 @@ impl App {
             }
         });
 
+        egui::SidePanel::right("right_panel").show(ctx, |ui| {
+            ui.heading("right side panel");
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.group(|ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let method = self.state.method;
+                    ui.selectable_value(
+                        &mut self.state.method,
+                        HttpMethod::Get,
+                        format!("{}", method),
+                    );
+                    ui.text_edit_singleline(&mut self.state.url);
+                });
+            });
             self.tabs.tree.ui(&mut self.tabs.behavior, ui);
         });
     }
@@ -163,15 +182,15 @@ impl App {
                 .show(ui, |ui| {
                     ui.label("URL:");
                     ui.add(
-                        egui::TextEdit::singleline(&mut self.url)
+                        egui::TextEdit::singleline(&mut self.state.url)
                             .hint_text("http://httpbin.org/get"),
                     );
                     ui.end_row();
                     ui.label("Method:");
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.method, HttpMethod::Get, "GET");
-                        ui.selectable_value(&mut self.method, HttpMethod::Head, "HEAD");
-                        ui.selectable_value(&mut self.method, HttpMethod::Post, "POST");
+                        ui.selectable_value(&mut self.state.method, HttpMethod::Get, "GET");
+                        ui.selectable_value(&mut self.state.method, HttpMethod::Head, "HEAD");
+                        ui.selectable_value(&mut self.state.method, HttpMethod::Post, "POST");
                     });
                     ui.end_row();
 
@@ -188,13 +207,13 @@ impl App {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading("Response");
                     ui.vertical(|ui| {
-                        ui.label(format!("query: {:?}", self.query));
-                        ui.label(format!("URL: {}", self.url));
-                        ui.label(format!("Method: {:?}", self.method));
-                        ui.label(format!("Body: {}", self.body));
+                        ui.label(format!("query: {:?}", self.state.query));
+                        ui.label(format!("URL: {}", self.state.url));
+                        ui.label(format!("Method: {:?}", self.state.method));
+                        ui.label(format!("Body: {}", self.state.body));
                         ui.separator();
 
-                        let store = self.response.clone();
+                        let store = self.state.response.clone();
                         let resp = &*store.lock().unwrap();
 
                         if let Some(resp) = resp {
@@ -210,7 +229,7 @@ impl App {
                     });
                 });
                 // ui.add(
-                //     egui::TextEdit::multiline(&mut self.response)
+                //     egui::TextEdit::multiline(&mut self.state.response)
                 //         .desired_width(f32::INFINITY)
                 //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
                 // );
@@ -218,10 +237,10 @@ impl App {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut behavior = RequestTreeBehavior {
-                query: &mut self.query,
-                headers: &mut self.headers,
+                query: &mut self.state.query,
+                headers: &mut self.state.headers,
             };
-            self.request_tree.ui(&mut behavior, ui);
+            self.state.request_tree.ui(&mut behavior, ui);
         });
     }
 
@@ -233,22 +252,24 @@ impl App {
             .corner_radius(CornerRadius::ZERO)
             .show(ui, |ui| {
                 let mut behavior = ResponseTreeBehavior { response };
-                self.response_tree.ui(&mut behavior, ui);
+                self.state.response_tree.ui(&mut behavior, ui);
             });
         // }
     }
 
     fn execute_http(&mut self, _: &egui::Context) {
         let input = HttpRequest {
-            url: self.url.clone(),
-            method: self.method,
+            url: self.state.url.clone(),
+            method: self.state.method,
             query: self
+                .state
                 .query
                 .iter()
                 .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
                 .map(|p| (p.key.clone(), p.value.clone()))
                 .collect(),
             headers: self
+                .state
                 .query
                 .iter()
                 .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
@@ -258,7 +279,7 @@ impl App {
         };
 
         log::info!("{:?}", input);
-        let response_store = self.response.clone();
+        let response_store = self.state.response.clone();
         http::execute(input, move |result| match result {
             Ok(resp) => {
                 *response_store.lock().unwrap() = Some(resp);

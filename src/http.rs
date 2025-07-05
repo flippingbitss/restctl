@@ -1,8 +1,20 @@
+use core::fmt;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {
     Get,
     Post,
     Head,
+}
+
+impl fmt::Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HttpMethod::Get => write!(f, "GET"),
+            HttpMethod::Post => write!(f, "POST"),
+            HttpMethod::Head => write!(f, "HEAD"),
+        }
+    }
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
