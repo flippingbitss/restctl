@@ -14,3 +14,7 @@ impl Default for Param {
         }
     }
 }
+
+pub trait View {
+    fn view(&mut self, ui: &mut egui::Ui);
+}

@@ -4,8 +4,10 @@ use egui::{panel::TopBottomSide, CornerRadius, Shadow};
 use egui_tiles::Tree;
 
 use crate::{
+    components::key_value_editor::key_value_editor,
     core::Param,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
+    tiles::{Pane, TabsView},
     widgets::{
         RequestPane, RequestPaneKind, RequestTreeBehavior, ResponsePane, ResponsePaneKind,
         ResponseTreeBehavior,
@@ -22,9 +24,9 @@ pub struct App {
     headers: Vec<Param>,
     body: String,
     response: Arc<Mutex<Option<HttpResponse>>>,
-
     request_tree: Tree<RequestPane>,
     response_tree: Tree<ResponsePane>,
+    tabs: TabsView,
 }
 
 impl Default for App {
@@ -57,6 +59,8 @@ impl Default for App {
             ],
         );
 
+        let tiles = TabsView::default();
+
         Self {
             url: String::new(),
             body: String::new(),
@@ -66,6 +70,7 @@ impl Default for App {
             response: Arc::new(Mutex::new(None)),
             response_tree,
             request_tree,
+            tabs: tiles,
         }
     }
 }
@@ -78,9 +83,9 @@ impl App {
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-        }
+        // if let Some(storage) = cc.storage {
+        //     return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        // }
 
         Default::default()
     }
@@ -91,9 +96,51 @@ impl eframe::App for App {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.layout_ui(ctx);
+    }
+}
+
+impl App {
+    fn layout_ui(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::left("tree").show(ctx, |ui| {
+            if ui.button("Reset").clicked() {
+                *self = Default::default();
+            }
+            self.tabs.behavior.ui(ui);
+
+            ui.separator();
+
+            ui.collapsing("Tree", |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                let tree_debug = format!("{:#?}", self.tabs.tree);
+                ui.monospace(&tree_debug);
+            });
+
+            ui.separator();
+
+            if let Some(root) = self.tabs.tree.root() {
+                // tree_ui(ui, &mut self.tabs.behavior, &mut self.tabs.tree.tiles, root);
+            }
+
+            if let Some(parent) = self.tabs.behavior.add_child_to.take() {
+                let new_child = self.tabs.tree.tiles.insert_pane(Pane::with_nr(100));
+                if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
+                    self.tabs.tree.tiles.get_mut(parent)
+                {
+                    tabs.add_child(new_child);
+                    tabs.set_active(new_child);
+                }
+            }
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.tabs.tree.ui(&mut self.tabs.behavior, ui);
+        });
+    }
+
+    fn old_ui(&mut self, ctx: &egui::Context) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
         //
@@ -177,9 +224,7 @@ impl eframe::App for App {
             self.request_tree.ui(&mut behavior, ui);
         });
     }
-}
 
-impl App {
     fn response_ui(&mut self, response: &HttpResponse, ui: &mut egui::Ui, ctx: &egui::Context) {
         // let response = &*self.response.lock().unwrap();
         // if let Some(response) = response {
