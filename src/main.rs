@@ -20,7 +20,10 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "restctl",
         native_options,
-        Box::new(|cc| Ok(Box::new(restctl::App::new(cc)))),
+        Box::new(|cc| {
+            // cc.egui_ctx.set_theme(egui::Theme::Light);
+            Ok(Box::new(restctl::App::new(cc)))
+        }),
     )
 }
 
@@ -50,7 +53,10 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(restctl::App::new(cc)))),
+                Box::new(|cc| {
+                    // cc.egui_ctx.set_theme(egui::Theme::Light);
+                    Ok(Box::new(restctl::App::new(cc)))
+                }),
             )
             .await;
 

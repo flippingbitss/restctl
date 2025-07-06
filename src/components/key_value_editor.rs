@@ -1,4 +1,4 @@
-use egui::Ui;
+use egui::{Color32, Ui};
 
 use crate::core::Param;
 

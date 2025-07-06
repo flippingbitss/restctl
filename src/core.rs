@@ -18,3 +18,60 @@ impl Default for Param {
 pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }
+
+pub type SharedState = Arc<Mutex<AppState>>;
+
+use std::sync::{Arc, Mutex};
+
+use crate::http::{HttpMethod, HttpResponse};
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct AppState {
+    pub url: String,
+    pub method: HttpMethod,
+    pub query: Vec<Param>,
+    pub headers: Vec<Param>,
+    pub body: String,
+    pub response: Arc<Mutex<Option<HttpResponse>>>,
+}
+
+impl AppState {
+    pub fn new(
+        url: String,
+        method: HttpMethod,
+        query: Vec<Param>,
+        headers: Vec<Param>,
+        body: String,
+        response: Arc<Mutex<Option<HttpResponse>>>,
+    ) -> Self {
+        Self {
+            url,
+            method,
+            query,
+            headers,
+            body,
+            response,
+        }
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        AppState {
+            url: String::new(),
+            body: String::new(),
+            method: HttpMethod::Get,
+            query: vec![Default::default()],
+            headers: vec![Default::default()],
+            response: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+struct ContainerId(usize);
+struct ViewId(usize);
+
+enum Item {
+    Container(ContainerId),
+    View(ViewId),
+}
