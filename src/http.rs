@@ -1,5 +1,7 @@
 use core::fmt;
 
+use crate::core::AppState;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {
     Get,
@@ -67,5 +69,34 @@ pub fn execute(
             Err(_) => Err(HttpError::Unknown),
         };
         callback(mapped);
+    });
+}
+
+pub fn execute_with_state(state: &mut AppState) {
+    let input = HttpRequest {
+        url: state.url.clone(),
+        method: state.method,
+        query: state
+            .query
+            .iter()
+            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
+            .map(|p| (p.key.clone(), p.value.clone()))
+            .collect(),
+        headers: state
+            .query
+            .iter()
+            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
+            .map(|p| (p.key.clone(), p.value.clone()))
+            .collect(),
+        body: None,
+    };
+
+    log::info!("{:?}", input);
+    let response_store = state.response.clone();
+    execute(input, move |result| match result {
+        Ok(resp) => {
+            *response_store.lock().unwrap() = Some(resp);
+        }
+        Err(_) => {}
     });
 }

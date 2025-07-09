@@ -1,28 +1,38 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use egui::{
+    ahash::HashMap,
     epaint::text::{FontInsert, InsertFontFamily},
     panel::TopBottomSide,
-    CornerRadius, Frame, Shadow,
+    CornerRadius, Frame, Shadow, ThemePreference, Vec2,
 };
 use egui_tiles::Tree;
 
 use crate::{
     components::key_value_editor::key_value_editor,
-    core::{AppState, Param, SharedState},
+    core::{AppState, Param},
+    header,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
-    tiles::{Pane, PaneKind, TabsView, TreeBehavior},
+    tiles::{Pane, PaneKind, TreeBehavior},
     widgets::{
         RequestPane, RequestPaneKind, RequestTreeBehavior, ResponsePane, ResponsePaneKind,
         ResponseTreeBehavior,
     },
 };
 
+#[derive(Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+enum StateId {
+    Request,
+}
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    state: SharedState,
+    state: AppState,
 
     #[serde(skip)]
     request_tree: Tree<RequestPane>,
@@ -31,7 +41,7 @@ pub struct App {
     response_tree: Tree<ResponsePane>,
 
     #[serde(skip)]
-    tabs: TabsView,
+    tree: egui_tiles::Tree<Pane>,
 }
 
 impl Default for App {
@@ -83,16 +93,11 @@ impl Default for App {
         let root = tiles.insert_tab_tile(tabs);
 
         let tree = egui_tiles::Tree::new("my_tree", root, tiles);
-        let state = Arc::new(Mutex::new(AppState::default()));
-
-        let tabs = TabsView {
-            tree,
-            behavior: TreeBehavior::default_with_state(state.clone()),
-        };
+        let state = AppState::default();
 
         Self {
             state,
-            tabs,
+            tree,
             request_tree,
             response_tree,
         }
@@ -100,21 +105,12 @@ impl Default for App {
 }
 
 impl App {
-    fn add_font(ctx: &egui::Context) {
-        let bytes = include_bytes!("../assets/fonts/Inter-VariableFont_opsz,wght.ttf");
-        ctx.add_font(FontInsert::new(
-            "my_font",
-            egui::FontData::from_static(bytes),
-            vec![InsertFontFamily {
-                family: egui::FontFamily::Proportional,
-                priority: egui::epaint::text::FontPriority::Highest,
-            }],
-        ));
-    }
-
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        Self::add_font(&cc.egui_ctx);
+        // let mut style = cc.egui_ctx.style();
+        // cc.egui_ctx.style_mut(|style| {
+        // style.spacing.button_padding = Vec2::new(10.0, 6.0);
+        // });
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
@@ -135,12 +131,21 @@ impl eframe::App for App {
     }
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_theme(ThemePreference::Dark);
         self.layout_ui(ctx);
     }
 }
 
 impl App {
+    // fn request_state(&mut self) -> &mut AppState {
+    //     self.states
+    //         .get_mut(&StateId::Request)
+    //         .map(|s| s.as_ref())
+    //         .expect("no request state")
+    // }
     fn layout_ui(&mut self, ctx: &egui::Context) {
+        // egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {});
+
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(false)
             .exact_height(32.0)
@@ -151,39 +156,51 @@ impl App {
 
         egui::SidePanel::left("tree").show(ctx, |ui| {
             ui.heading("Debug tools");
-            self.tabs.behavior.ui(ui);
+            // tiles_behavior.ui(ui);
 
             ui.separator();
 
             ui.collapsing("Tree", |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                let tree_debug = format!("{:#?}", self.tabs.tree);
+                let tree_debug = format!("{:#?}", self.tree);
                 ui.monospace(&tree_debug);
             });
 
             ui.separator();
 
-            if let Some(root) = self.tabs.tree.root() {
+            if let Some(root) = self.tree.root() {
                 // tree_ui(ui, &mut self.tabs.behavior, &mut self.tabs.tree.tiles, root);
             }
 
-            if let Some(parent) = self.tabs.behavior.add_child_to.take() {
-                let new_child = self
-                    .tabs
-                    .tree
-                    .tiles
-                    .insert_pane(Pane::from_values(100, PaneKind::QueryParams));
-                if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
-                    self.tabs.tree.tiles.get_mut(parent)
-                {
-                    tabs.add_child(new_child);
-                    tabs.set_active(new_child);
-                }
-            }
+            // if let Some(parent) = tiles_behavior.add_child_to.take() {
+            //     let new_child = self
+            //         .tree
+            //         .tiles
+            //         .insert_pane(Pane::from_values(100, PaneKind::QueryParams));
+            //     if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
+            //         self.tree.tiles.get_mut(parent)
+            //     {
+            //         tabs.add_child(new_child);
+            //         tabs.set_active(new_child);
+            //     }
+            // }
         });
+
+        let output = {
+            let response = self.state.response.lock().unwrap();
+            let resp = &*response;
+
+            if let Some(resp) = resp {
+                serde_json::to_string_pretty(&resp).unwrap()
+            } else {
+                "No response yet".into()
+            }
+        };
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
             ui.heading("right side panel");
+
+            ui.label(output);
 
             ui.allocate_space(ui.available_size());
         });
@@ -195,150 +212,24 @@ impl App {
                     .fill(ctx.style().visuals.panel_fill),
             )
             .show(ctx, |ui| {
-                ui.group(|ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        let mut state = self.state.lock().unwrap();
-                        let method = state.method;
-                        ui.selectable_value(
-                            &mut state.method,
-                            HttpMethod::Get,
-                            format!("{}", method),
-                        );
-                        ui.text_edit_singleline(&mut state.url);
-                    });
-                });
-                self.tabs.tree.ui(&mut self.tabs.behavior, ui);
+                header::show(ui, &mut self.state);
+                // let mut state = self.state.lock().unwrap();
+                // ui.group(|ui| {
+                //     ui.horizontal_wrapped(|ui| {
+                //         let mut state = self.state.lock().unwrap();
+                //         let method = state.method;
+                //         ui.selectable_value(
+                //             &mut state.method,
+                //             HttpMethod::Get,
+                //             format!("{}", method),
+                //         );
+                //         ui.text_edit_singleline(&mut state.url);
+                //     });
+                // });
+                //
+
+                let mut tiles_behavior = TreeBehavior::default_with_state(&mut self.state);
+                self.tree.ui(&mut tiles_behavior, ui);
             });
-    }
-
-    fn old_ui(&mut self, ctx: &egui::Context) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-        //
-
-        ctx.debug_painter().rect_stroke(
-            ctx.screen_rect(),
-            CornerRadius::ZERO,
-            ctx.style().visuals.window_stroke(),
-            egui::StrokeKind::Inside,
-        );
-
-        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("Hello world!");
-
-            egui::Grid::new("request_params")
-                .spacing(egui::Vec2::splat(6.0))
-                .min_col_width(70.0)
-                .num_columns(2)
-                .show(ui, |ui| {
-                    {
-                        let mut state = self.state.lock().unwrap();
-                        ui.label("URL:");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.url)
-                                .hint_text("http://httpbin.org/get"),
-                        );
-                        ui.end_row();
-                        ui.label("Method:");
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(&mut state.method, HttpMethod::Get, "GET");
-                            ui.selectable_value(&mut state.method, HttpMethod::Head, "HEAD");
-                            ui.selectable_value(&mut state.method, HttpMethod::Post, "POST");
-                        });
-                        ui.end_row();
-                    }
-                    if ui.button("Send").clicked() {
-                        self.execute_http(ctx);
-                    }
-                });
-        });
-
-        egui::TopBottomPanel::new(TopBottomSide::Bottom, "bottom_bar")
-            .resizable(true)
-            // .height_range(egui::Rangef::new(200.0, 300.0))
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.heading("Response");
-                    ui.vertical(|ui| {
-                        let state = self.state.lock().unwrap();
-                        ui.label(format!("query: {:?}", state.query));
-                        ui.label(format!("URL: {}", state.url));
-                        ui.label(format!("Method: {:?}", state.method));
-                        ui.label(format!("Body: {}", state.body));
-                        ui.separator();
-
-                        let store = state.response.clone();
-                        let resp = &*store.lock().unwrap();
-
-                        if let Some(resp) = resp {
-                            egui::Frame::window(ui.style())
-                                .shadow(Shadow::NONE)
-                                .corner_radius(CornerRadius::ZERO)
-                                .show(ui, |ui| {
-                                    let mut behavior = ResponseTreeBehavior { response: resp };
-                                    self.response_tree.ui(&mut behavior, ui);
-                                });
-                            // ui.label(format!("Status: {} {}", resp.status, resp.status_text));
-                            // ui.label(format!(
-                            //     "Response body: {:?}",
-                            //     std::str::from_utf8(&resp.body)
-                            // ));
-                        } else {
-                            ui.label("No response");
-                        }
-                    });
-                });
-                // ui.add(
-                //     egui::TextEdit::multiline(&mut self.state.response)
-                //         .desired_width(f32::INFINITY)
-                //         .font(egui::TextStyle::Monospace.resolve(ui.style())),
-                // );
-            });
-
-        // egui::CentralPanel::default().show(ctx, |ui| {
-        //     let mut state = self.state.lock().unwrap();
-        //     let mut behavior = RequestTreeBehavior {
-        //         query: &mut query,
-        //         headers: &mut headers,
-        //     };
-        //     self.request_tree.ui(&mut behavior, ui);
-        // });
-    }
-
-    fn response_ui(&mut self, response: &HttpResponse, ui: &mut egui::Ui, ctx: &egui::Context) {
-        // let response = &*self.response.lock().unwrap();
-        // if let Some(response) = response {
-        // }
-    }
-
-    fn execute_http(&mut self, _: &egui::Context) {
-        let state = self.state.lock().unwrap();
-        let input = HttpRequest {
-            url: state.url.clone(),
-            method: state.method,
-            query: state
-                .query
-                .iter()
-                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-                .map(|p| (p.key.clone(), p.value.clone()))
-                .collect(),
-            headers: state
-                .query
-                .iter()
-                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-                .map(|p| (p.key.clone(), p.value.clone()))
-                .collect(),
-            body: None,
-        };
-
-        log::info!("{:?}", input);
-        let response_store = state.response.clone();
-        http::execute(input, move |result| match result {
-            Ok(resp) => {
-                *response_store.lock().unwrap() = Some(resp);
-            }
-            Err(_) => {}
-        });
     }
 }

@@ -1,13 +1,13 @@
 use core::fmt;
 use std::fmt::Display;
 
-use egui::{Color32, CornerRadius, Margin, Rect, Sense};
+use egui::{Color32, CornerRadius, Id, Margin, Rect, Sense};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 use log::{debug, info, log};
 
 use crate::{
     components::key_value_editor::key_value_editor,
-    core::{AppState, Param, SharedState},
+    core::{AppState, Param},
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -43,8 +43,8 @@ impl fmt::Display for PaneKind {
     }
 }
 
-fn query_params_ui(ui: &mut egui::Ui, params: &mut Vec<Param>) {
-    key_value_editor("query_params", params, ui);
+fn query_params_ui(ui: &mut egui::Ui, params: &mut Vec<Param>, id: egui::Id) {
+    key_value_editor(id, params, ui);
 }
 
 impl Pane {
@@ -81,7 +81,9 @@ impl Pane {
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
                 match self.kind {
-                    PaneKind::QueryParams => query_params_ui(ui, &mut state.query),
+                    PaneKind::QueryParams => {
+                        query_params_ui(ui, &mut state.query, Id::new(self.nr))
+                    }
                     _ => unreachable!(),
                 }
                 ui.allocate_rect(ui.max_rect(), Sense::empty());
@@ -103,12 +105,12 @@ impl Pane {
     }
 }
 
-pub struct TreeBehavior {
+pub struct TreeBehavior<'a> {
     pub simplification_options: egui_tiles::SimplificationOptions,
     pub tab_bar_height: f32,
     pub gap_width: f32,
     pub add_child_to: Option<egui_tiles::TileId>,
-    pub state: SharedState,
+    pub state: &'a mut AppState,
 }
 //
 // impl<'a> Default for TreeBehavior<'a> {
@@ -122,8 +124,8 @@ pub struct TreeBehavior {
 //     }
 // }
 //
-impl TreeBehavior {
-    pub fn default_with_state(state: SharedState) -> Self {
+impl<'a> TreeBehavior<'a> {
+    pub fn default_with_state(state: &'a mut AppState) -> Self {
         Self {
             simplification_options: SimplificationOptions {
                 all_panes_must_have_tabs: true,
@@ -173,14 +175,14 @@ impl TreeBehavior {
     }
 }
 
-impl egui_tiles::Behavior<Pane> for TreeBehavior {
+impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
     fn pane_ui(
         &mut self,
         ui: &mut egui::Ui,
         _tile_id: egui_tiles::TileId,
         view: &mut Pane,
     ) -> egui_tiles::UiResponse {
-        view.pane_ui(&mut self.state.lock().unwrap(), ui)
+        view.pane_ui(&mut self.state, ui)
     }
 
     fn tab_title_for_pane(&mut self, view: &Pane) -> egui::WidgetText {
@@ -206,8 +208,8 @@ impl egui_tiles::Behavior<Pane> for TreeBehavior {
     // ---
     // Settings:
 
-    fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
-        self.tab_bar_height
+    fn tab_bar_height(&self, style: &egui::Style) -> f32 {
+        self.tab_bar_height + style.spacing.button_padding.y * 2.0
     }
 
     fn gap_width(&self, _style: &egui::Style) -> f32 {
@@ -431,7 +433,7 @@ impl egui_tiles::Behavior<Pane> for TreeBehavior {
 
     fn tab_bar_color(&self, visuals: &egui::Visuals) -> Color32 {
         if visuals.dark_mode {
-            visuals.extreme_bg_color
+            visuals.widgets.active.weak_bg_fill
         } else {
             (egui::Rgba::from(visuals.panel_fill) * egui::Rgba::from_gray(0.8)).into()
         }
@@ -473,7 +475,7 @@ impl egui_tiles::Behavior<Pane> for TreeBehavior {
         state: &egui_tiles::TabState,
     ) -> Color32 {
         if state.active {
-            visuals.widgets.active.text_color()
+            visuals.widgets.open.text_color()
         } else {
             visuals.widgets.noninteractive.text_color()
         }
@@ -516,12 +518,6 @@ impl egui_tiles::Behavior<Pane> for TreeBehavior {
 
     fn on_edit(&mut self, _edit_action: egui_tiles::EditAction) {}
 }
-
-pub struct TabsView {
-    pub tree: egui_tiles::Tree<Pane>,
-    pub behavior: TreeBehavior,
-}
-
 //
 // impl<'a> Default for TabsView<'a> {
 //     fn default() -> Self {

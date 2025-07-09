@@ -34,7 +34,7 @@ impl<'a> egui_tiles::Behavior<RequestPane> for RequestTreeBehavior<'a> {
             .show(ui, |ui| {
                 ui.label(egui::RichText::new(format!("{}", pane.title)).strong());
                 ui.separator();
-                key_value_editor(&pane.title, &mut values, ui);
+                // key_value_editor(&pane.title, &mut values, ui);
             });
         egui_tiles::UiResponse::None
     }

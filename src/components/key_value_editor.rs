@@ -1,38 +1,136 @@
-use egui::{Color32, Ui};
+use egui::{Color32, Id, Label, Sense, Ui};
 
 use crate::core::Param;
 
-pub fn key_value_editor(id: &str, values: &mut Vec<Param>, ui: &mut Ui) {
-    egui::Grid::new(id)
-        .num_columns(2)
-        .spacing(egui::Vec2::splat(6.0))
-        .striped(true)
-        .min_col_width(0.0)
-        .max_col_width(200.0)
-        .show(ui, |ui| {
-            ui.add(egui::Label::new(""));
-            ui.add(egui::Label::new("Key"));
-            ui.add(egui::Label::new("Value"));
-            ui.end_row();
-            for i in 0..(values.len()) {
-                if let Some(param) = values.get_mut(i) {
-                    ui.add(egui::Checkbox::without_text(&mut param.enabled));
-                    ui.add(egui::TextEdit::singleline(&mut param.key).desired_width(70.0));
-                    ui.add(egui::TextEdit::singleline(&mut param.value).desired_width(200.0));
-                    if values.len() > 1 {
-                        let close = ui.add(egui::Button::new("X"));
-                        if close.clicked() {
-                            values.remove(i);
-                        }
-                    } else {
-                        ui.add_enabled(false, egui::Button::new("X"));
-                    }
-                    ui.end_row();
-                }
+pub fn key_value_editor(_: egui::Id, values: &mut Vec<Param>, ui: &mut Ui) {
+    let half_spacing_amt = ui.style().spacing.item_spacing.y / 2.0;
+    let mut drop_target_result: Option<(usize, usize)> = None;
+
+    for current_item_index in 0..(values.len()) {
+        // Render list item and get drag handle's response and list item's response
+        let list_item_response = list_item_ui(ui, values, current_item_index);
+        let drag_response = list_item_response.inner;
+        let item_response = list_item_response.response;
+
+        if drag_response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if drag_response.drag_started() {
+            drag_response.dnd_set_drag_payload(current_item_index);
+        }
+        // If a drag payload exists, find the target position
+        let source_item_index = egui::DragAndDrop::payload::<usize>(ui.ctx()).map(|i| *i);
+
+        find_drop_target(
+            ui,
+            source_item_index,
+            current_item_index,
+            item_response.rect,
+            half_spacing_amt, // we use this offset to get consistent indicator position
+            &mut drop_target_result,
+        );
+    }
+
+    // perform the insertion
+    if let Some((source_index, target_index)) = drop_target_result {
+        if source_index != target_index {
+            let item = values.remove(source_index);
+            if source_index < target_index {
+                values.insert(target_index - 1, item)
+            } else {
+                values.insert(target_index, item);
             }
-        });
+        }
+    }
+
+    // Add new param item
     ui.add_space(10.0);
     if ui.button("Add").clicked() {
         values.push(Default::default());
     }
+}
+
+fn list_item_ui(
+    ui: &mut Ui,
+    values: &mut Vec<Param>,
+    index: usize,
+) -> egui::InnerResponse<egui::Response> {
+    ui.horizontal(|ui| {
+        let param = &mut values[index];
+
+        let drag_icon = Label::new("\u{e945}")
+            .sense(Sense::empty())
+            .selectable(false);
+
+        let drag_handle = ui.add(drag_icon);
+
+        ui.add(egui::Checkbox::without_text(&mut param.enabled));
+        ui.add_enabled(
+            param.enabled,
+            egui::TextEdit::singleline(&mut param.key).desired_width(70.0),
+        );
+        ui.add_enabled(
+            param.enabled,
+            egui::TextEdit::singleline(&mut param.value).desired_width(200.0),
+        );
+        if values.len() > 1 {
+            let close = ui.add(egui::Button::new("X"));
+            if close.clicked() {
+                values.remove(index);
+            }
+        } else {
+            ui.add_enabled(false, egui::Button::new("X"));
+        }
+
+        // Check for drag interaction and set drag payload
+        // let mut drag_response =
+        let drag_response = ui.interact(drag_handle.rect, drag_handle.id, Sense::click_and_drag());
+        drag_response
+    })
+}
+
+/// Find target index to drop item to, sets the result to the passed in 'swap' param
+fn find_drop_target(
+    ui: &mut Ui,
+    source_item_index: Option<usize>,
+    current_index: usize,
+    current_item_rect: egui::Rect,
+    half_item_spacing_amt: f32,
+    swap: &mut Option<(usize, usize)>,
+) {
+    if let Some(source_item_index) = source_item_index {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+
+        let (top, bottom) = current_item_rect.split_top_bottom_at_fraction(0.5);
+        // pointer in upper half
+        let (insert_y, target_index) = if ui.rect_contains_pointer(top) {
+            (Some(top.top() - half_item_spacing_amt), Some(current_index))
+        // pointer in bottom half
+        } else if ui.rect_contains_pointer(bottom) {
+            (
+                Some(bottom.bottom() + half_item_spacing_amt),
+                Some(current_index + 1),
+            )
+        } else {
+            (None, None)
+        };
+
+        // Found an insert position, draw an indicator there
+        if let (Some(insert_y), Some(target_index)) = (insert_y, target_index) {
+            ui.painter().hline(
+                ui.cursor()
+                    .x_range()
+                    .intersection(current_item_rect.x_range()),
+                insert_y,
+                (2.0, Color32::WHITE),
+            );
+
+            // note: can't use `response.drag_released()` because we might not be the item which
+            // started the drag
+            if ui.input(|i| i.pointer.any_released()) {
+                *swap = Some((source_item_index, target_index));
+                egui::DragAndDrop::clear_payload(ui.ctx());
+            }
+        }
+    };
 }

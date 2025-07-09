@@ -2,7 +2,10 @@
 mod app;
 mod components;
 mod core;
+mod header;
 mod http;
+mod styles;
 mod tiles;
 mod widgets;
 pub use app::App;
+pub use styles::customize_app_styles;

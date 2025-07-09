@@ -19,8 +19,6 @@ pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }
 
-pub type SharedState = Arc<Mutex<AppState>>;
-
 use std::sync::{Arc, Mutex};
 
 use crate::http::{HttpMethod, HttpResponse};
@@ -61,7 +59,24 @@ impl Default for AppState {
             url: String::new(),
             body: String::new(),
             method: HttpMethod::Get,
-            query: vec![Default::default()],
+            // query: vec![Default::default()],
+            query: vec![
+                Param {
+                    enabled: true,
+                    key: "aaa".into(),
+                    value: "value 1".into(),
+                },
+                Param {
+                    enabled: true,
+                    key: "bbb".into(),
+                    value: "value 2".into(),
+                },
+                Param {
+                    enabled: true,
+                    key: "ccc".into(),
+                    value: "value 3".into(),
+                },
+            ],
             headers: vec![Default::default()],
             response: Arc::new(Mutex::new(None)),
         }
