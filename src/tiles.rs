@@ -6,8 +6,8 @@ use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 use log::{debug, info, log};
 
 use crate::{
-    components::key_value_editor::key_value_editor,
-    core::{AppState, Param},
+    components::params_editor_view::ParamsEditorView,
+    core::{Param, RequestState},
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -43,15 +43,16 @@ impl fmt::Display for PaneKind {
     }
 }
 
-fn query_params_ui(ui: &mut egui::Ui, params: &mut Vec<Param>, id: egui::Id) {
-    key_value_editor(id, params, ui);
-}
-
 impl Pane {
     pub fn from_values(nr: usize, kind: PaneKind) -> Self {
         Pane { nr, kind }
     }
-    pub fn pane_ui(&mut self, state: &mut AppState, ui: &mut egui::Ui) -> egui_tiles::UiResponse {
+    pub fn pane_ui(
+        &mut self,
+        state: &mut RequestState,
+        params_view: &mut ParamsEditorView,
+        ui: &mut egui::Ui,
+    ) -> egui_tiles::UiResponse {
         let color = egui::epaint::Hsva::new(0.103 * self.nr as f32, 0.5, 0.5, 1.0);
         //
         // ui.painter().rect_stroke(
@@ -82,7 +83,10 @@ impl Pane {
             .show(ui, |ui| {
                 match self.kind {
                     PaneKind::QueryParams => {
-                        query_params_ui(ui, &mut state.query, Id::new(self.nr))
+                        params_view.show(ui, &mut state.query);
+                    }
+                    PaneKind::Headers => {
+                        params_view.show(ui, &mut state.headers);
                     }
                     _ => unreachable!(),
                 }
@@ -110,7 +114,9 @@ pub struct TreeBehavior<'a> {
     pub tab_bar_height: f32,
     pub gap_width: f32,
     pub add_child_to: Option<egui_tiles::TileId>,
-    pub state: &'a mut AppState,
+    pub state: &'a mut RequestState,
+    // TODO: move to request view
+    pub params_view: &'a mut ParamsEditorView,
 }
 //
 // impl<'a> Default for TreeBehavior<'a> {
@@ -125,7 +131,10 @@ pub struct TreeBehavior<'a> {
 // }
 //
 impl<'a> TreeBehavior<'a> {
-    pub fn default_with_state(state: &'a mut AppState) -> Self {
+    pub fn default_with_state(
+        state: &'a mut RequestState,
+        params_view: &'a mut ParamsEditorView,
+    ) -> Self {
         Self {
             simplification_options: SimplificationOptions {
                 all_panes_must_have_tabs: true,
@@ -135,6 +144,7 @@ impl<'a> TreeBehavior<'a> {
             gap_width: 2.0,
             add_child_to: None,
             state,
+            params_view,
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -142,8 +152,7 @@ impl<'a> TreeBehavior<'a> {
             simplification_options,
             tab_bar_height,
             gap_width,
-            add_child_to: _,
-            state,
+            ..
         } = self;
 
         egui::Grid::new("behavior_ui")
@@ -182,7 +191,7 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
         _tile_id: egui_tiles::TileId,
         view: &mut Pane,
     ) -> egui_tiles::UiResponse {
-        view.pane_ui(&mut self.state, ui)
+        view.pane_ui(&mut self.state, &mut self.params_view, ui)
     }
 
     fn tab_title_for_pane(&mut self, view: &Pane) -> egui::WidgetText {

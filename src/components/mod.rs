@@ -1,2 +1,1 @@
-pub mod key_value_editor;
-pub mod query;
+pub mod params_editor_view;

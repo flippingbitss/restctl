@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use crate::http::{HttpMethod, HttpResponse};
 
 #[derive(serde::Deserialize, serde::Serialize)]
-pub struct AppState {
+pub struct RequestState {
     pub url: String,
     pub method: HttpMethod,
     pub query: Vec<Param>,
@@ -33,7 +33,7 @@ pub struct AppState {
     pub response: Arc<Mutex<Option<HttpResponse>>>,
 }
 
-impl AppState {
+impl RequestState {
     pub fn new(
         url: String,
         method: HttpMethod,
@@ -53,9 +53,9 @@ impl AppState {
     }
 }
 
-impl Default for AppState {
+impl Default for RequestState {
     fn default() -> Self {
-        AppState {
+        RequestState {
             url: String::new(),
             body: String::new(),
             method: HttpMethod::Get,

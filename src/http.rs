@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::core::AppState;
+use crate::core::RequestState;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {
@@ -72,7 +72,7 @@ pub fn execute(
     });
 }
 
-pub fn execute_with_state(state: &mut AppState) {
+pub fn execute_with_state(state: &mut RequestState) {
     let input = HttpRequest {
         url: state.url.clone(),
         method: state.method,

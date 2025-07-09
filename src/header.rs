@@ -1,11 +1,11 @@
 use egui::{Context, Margin};
 
 use crate::{
-    core::AppState,
+    core::RequestState,
     http::{self, HttpMethod},
 };
 
-pub fn show<'a>(ui: &mut egui::Ui, state: &mut AppState) {
+pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
     // The central panel the region left after adding TopPanel's and SidePanel's
     ui.add_space(10.0);
     ui.horizontal(|ui| {
@@ -33,4 +33,3 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut AppState) {
         // });
     });
 }
-

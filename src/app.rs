@@ -12,8 +12,8 @@ use egui::{
 use egui_tiles::Tree;
 
 use crate::{
-    components::key_value_editor::key_value_editor,
-    core::{AppState, Param},
+    components::params_editor_view::ParamsEditorView,
+    core::{Param, RequestState},
     header,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
     tiles::{Pane, PaneKind, TreeBehavior},
@@ -32,7 +32,7 @@ enum StateId {
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    state: AppState,
+    state: RequestState,
 
     #[serde(skip)]
     request_tree: Tree<RequestPane>,
@@ -42,6 +42,9 @@ pub struct App {
 
     #[serde(skip)]
     tree: egui_tiles::Tree<Pane>,
+
+    #[serde(skip)]
+    params_view: ParamsEditorView,
 }
 
 impl Default for App {
@@ -93,13 +96,14 @@ impl Default for App {
         let root = tiles.insert_tab_tile(tabs);
 
         let tree = egui_tiles::Tree::new("my_tree", root, tiles);
-        let state = AppState::default();
+        let state = RequestState::default();
 
         Self {
             state,
             tree,
             request_tree,
             response_tree,
+            params_view: Default::default(),
         }
     }
 }
@@ -228,7 +232,8 @@ impl App {
                 // });
                 //
 
-                let mut tiles_behavior = TreeBehavior::default_with_state(&mut self.state);
+                let mut tiles_behavior =
+                    TreeBehavior::default_with_state(&mut self.state, &mut self.params_view);
                 self.tree.ui(&mut tiles_behavior, ui);
             });
     }

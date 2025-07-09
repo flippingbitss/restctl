@@ -1,6 +1,6 @@
 use egui::{CornerRadius, Margin, Shadow, Ui};
 
-use crate::{components::key_value_editor::key_value_editor, core::Param, http::HttpResponse};
+use crate::{core::Param, http::HttpResponse};
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum RequestPaneKind {
     Query,
