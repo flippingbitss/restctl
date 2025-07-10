@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Display;
 
-use egui::{Color32, CornerRadius, Id, Margin, Rect, Sense};
+use egui::{Color32, CornerRadius, Id, Margin, Rect, RichText, Sense};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 use log::{debug, info, log};
 
@@ -113,7 +113,7 @@ pub struct TreeBehavior<'a> {
     pub simplification_options: egui_tiles::SimplificationOptions,
     pub tab_bar_height: f32,
     pub gap_width: f32,
-    pub add_child_to: Option<egui_tiles::TileId>,
+    pub add_child_to: Option<(egui_tiles::TileId, PaneKind)>,
     pub state: &'a mut RequestState,
     // TODO: move to request view
     pub params_view: &'a mut ParamsEditorView,
@@ -207,8 +207,11 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
         _scroll_offset: &mut f32,
     ) {
         ui.horizontal(|ui| {
-            if ui.button("➕").clicked() {
-                self.add_child_to = Some(tile_id);
+            if ui.small_button("Headers +").clicked() {
+                self.add_child_to = Some((tile_id, PaneKind::Headers));
+            }
+            if ui.small_button("Params +").clicked() {
+                self.add_child_to = Some((tile_id, PaneKind::QueryParams));
             }
             ui.separator();
         });
@@ -222,7 +225,7 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
     }
 
     fn gap_width(&self, _style: &egui::Style) -> f32 {
-        0.0
+        1.0
     }
 
     fn simplification_options(&self) -> egui_tiles::SimplificationOptions {

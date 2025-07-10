@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     sync::{Arc, Mutex},
     thread,
 };
@@ -7,12 +8,12 @@ use egui::{
     ahash::HashMap,
     epaint::text::{FontInsert, InsertFontFamily},
     panel::TopBottomSide,
-    CornerRadius, Frame, Shadow, ThemePreference, Vec2,
+    CornerRadius, Frame, RichText, Shadow, ThemePreference, Vec2,
 };
 use egui_tiles::Tree;
 
 use crate::{
-    components::params_editor_view::ParamsEditorView,
+    components::{params_editor_view::ParamsEditorView, params_reader_view},
     core::{Param, RequestState},
     header,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
@@ -171,6 +172,20 @@ impl App {
             });
 
             ui.separator();
+            let area = egui::containers::scroll_area::ScrollArea::vertical();
+            area.show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let code_points = include_str!(
+                        "../assets/fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].codepoints"
+                    );
+                    for line in code_points.lines() {
+                        let (label, code) = line.split_once(" ").unwrap();
+                        let value = u32::from_str_radix(code, 16).unwrap();
+                        let ch = char::from_u32(value).unwrap();
+                        ui.label(format!("{}", ch));
+                    }
+                });
+            });
 
             if let Some(root) = self.tree.root() {
                 // tree_ui(ui, &mut self.tabs.behavior, &mut self.tabs.tree.tiles, root);
@@ -195,16 +210,34 @@ impl App {
             let resp = &*response;
 
             if let Some(resp) = resp {
-                serde_json::to_string_pretty(&resp).unwrap()
+                let body = serde_json::from_slice::<serde_json::Value>(&resp.body).unwrap();
+                let prettified = serde_json::to_string_pretty(&body).unwrap();
+
+                Some((
+                    prettified,
+                    resp.headers.clone(),
+                    resp.status,
+                    resp.status_text.clone(),
+                ))
             } else {
-                "No response yet".into()
+                None
             }
         };
 
         egui::SidePanel::right("right_panel").show(ctx, |ui| {
             ui.heading("right side panel");
 
-            ui.label(output);
+            egui::containers::ScrollArea::vertical().show(ui, |ui| {
+                if let Some((body, headers, status, status_text)) = output {
+                    ui.label(format!("Status: {} {}", status, status_text));
+                    ui.label("Headers: ");
+                    params_reader_view::show("response_headers".into(), ui, &headers);
+                    ui.label("Body: ");
+                    ui.label(RichText::new(body).monospace());
+                } else {
+                    ui.label("No response yet");
+                }
+            });
 
             ui.allocate_space(ui.available_size());
         });
@@ -235,6 +268,22 @@ impl App {
                 let mut tiles_behavior =
                     TreeBehavior::default_with_state(&mut self.state, &mut self.params_view);
                 self.tree.ui(&mut tiles_behavior, ui);
+
+                if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
+                    let pane_id = self
+                        .tree
+                        .tiles
+                        .insert_pane(Pane::from_values(101, pane_kind));
+
+                    let parent = self.tree.tiles.get_mut(tile_id).unwrap();
+
+                    match parent {
+                        egui_tiles::Tile::Container(container) => {
+                            container.add_child(pane_id);
+                        }
+                        _ => {}
+                    }
+                }
             });
     }
 }
