@@ -15,6 +15,16 @@ impl Default for Param {
     }
 }
 
+impl Param {
+    pub fn enabled(key: String, value: String) -> Self {
+        Param {
+            enabled: true,
+            key,
+            value,
+        }
+    }
+}
+
 pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }

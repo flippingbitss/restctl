@@ -4,12 +4,25 @@ use crate::core::Param;
 pub struct ParamsEditorView {
     bulk_edit_enabled: bool,
     bulk_edit_value: String,
-    drop_target_result: Option<(usize, usize)>,
 }
 
 impl ParamsEditorView {
     pub fn show(&mut self, ui: &mut egui::Ui, values: &mut Vec<Param>) {
-        ui.checkbox(&mut self.bulk_edit_enabled, "Bulk Edit");
+        ui.horizontal(|ui| {
+            if ui
+                .checkbox(&mut self.bulk_edit_enabled, "Bulk Edit")
+                .clicked()
+            {
+                if self.bulk_edit_enabled {
+                    self.update_bulk_from_key_value(values);
+                }
+            }
+
+            if ui.button("Delete All").clicked() {
+                values.clear();
+            }
+        });
+
         ui.add_space(10.0);
         if self.bulk_edit_enabled {
             self.show_bulk_editor(ui, values);
@@ -21,7 +34,17 @@ impl ParamsEditorView {
     }
 
     fn show_bulk_editor(&mut self, ui: &mut egui::Ui, values: &mut Vec<Param>) {
-        ui.text_edit_multiline(&mut self.bulk_edit_value);
+        ui.add(
+            egui::TextEdit::multiline(&mut self.bulk_edit_value)
+                .font(egui::TextStyle::Monospace)
+                .margin(egui::Margin::same(8))
+                .hint_text("limit:100\nnext_token:abc")
+                .hint_text_font(egui::TextStyle::Monospace),
+        );
+
+        if ui.small_button("Save").clicked() {
+            self.update_key_value_from_bulk(values);
+        }
     }
 
     fn show_key_value_editor(&mut self, ui: &mut egui::Ui, values: &mut Vec<Param>) {
@@ -173,5 +196,31 @@ impl ParamsEditorView {
                 }
             }
         };
+    }
+
+    fn update_bulk_from_key_value(&mut self, values: &mut Vec<Param>) {
+        let bulk_value = values
+            .into_iter()
+            .map(|param| format!("{}:{}\n", param.key, param.value))
+            .collect::<String>();
+
+        self.bulk_edit_value = bulk_value;
+    }
+
+    fn update_key_value_from_bulk(&mut self, values: &mut Vec<Param>) {
+        if !self.bulk_edit_enabled {
+            return;
+        }
+
+        let updated = self
+            .bulk_edit_value
+            .lines()
+            .map(|line| line.split_once(':').unwrap_or_else(|| (line, "")))
+            .map(|(k, v)| Param::enabled(k.to_owned(), v.to_owned()));
+
+        values.clear();
+        values.extend(updated);
+
+        self.bulk_edit_enabled = false;
     }
 }
