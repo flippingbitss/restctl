@@ -18,10 +18,6 @@ use crate::{
     header,
     http::{self, HttpMethod, HttpRequest, HttpResponse},
     tiles::{Pane, PaneKind, TreeBehavior},
-    widgets::{
-        RequestPane, RequestPaneKind, RequestTreeBehavior, ResponsePane, ResponsePaneKind,
-        ResponseTreeBehavior,
-    },
 };
 
 #[derive(Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -36,12 +32,6 @@ pub struct App {
     state: RequestState,
 
     #[serde(skip)]
-    request_tree: Tree<RequestPane>,
-
-    #[serde(skip)]
-    response_tree: Tree<ResponsePane>,
-
-    #[serde(skip)]
     tree: egui_tiles::Tree<Pane>,
 
     #[serde(skip)]
@@ -50,51 +40,31 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let request_tree = Tree::new_vertical(
-            "request_tree",
-            vec![
-                RequestPane {
-                    title: "Headers".to_owned(),
-                    kind: RequestPaneKind::Headers,
-                },
-                RequestPane {
-                    title: "Query Params".to_owned(),
-                    kind: RequestPaneKind::Query,
-                },
-            ],
-        );
-
-        let response_tree = Tree::new_tabs(
-            "response_tree",
-            vec![
-                ResponsePane {
-                    title: "Headers".to_owned(),
-                    kind: ResponsePaneKind::Headers,
-                },
-                ResponsePane {
-                    title: "Raw Body".to_owned(),
-                    kind: ResponsePaneKind::RawBody,
-                },
-            ],
-        );
-
         let mut next_view_nr = 1;
-        let mut gen_view = || {
-            let view = Pane::from_values(next_view_nr, PaneKind::QueryParams);
+        let mut gen_view = |kind: PaneKind| {
+            let view = Pane::from_values(next_view_nr, kind);
             next_view_nr += 1;
             view
         };
 
         let mut tiles = egui_tiles::Tiles::default();
-
-        let mut tabs = vec![];
-        tabs.push({
-            let cells = (0..3).map(|_| tiles.insert_pane(gen_view())).collect();
-            tiles.insert_grid_tile(cells)
+        let mut request_tabs = vec![];
+        request_tabs.push({
+            let left = tiles.insert_pane(gen_view(PaneKind::QueryParams));
+            let right = tiles.insert_pane(gen_view(PaneKind::Headers));
+            tiles.insert_horizontal_tile(vec![left, right])
         });
-        tabs.push(tiles.insert_pane(gen_view()));
 
-        let root = tiles.insert_tab_tile(tabs);
+        let mut response_tabs = vec![];
+        response_tabs.push({
+            let left = tiles.insert_pane(gen_view(PaneKind::QueryParams));
+            let right = tiles.insert_pane(gen_view(PaneKind::Headers));
+            tiles.insert_horizontal_tile(vec![left, right])
+        });
+
+        let request_container = tiles.insert_tab_tile(request_tabs);
+        let response_container = tiles.insert_tab_tile(response_tabs);
+        let root = tiles.insert_vertical_tile(vec![request_container, response_container]);
 
         let tree = egui_tiles::Tree::new("my_tree", root, tiles);
         let state = RequestState::default();
@@ -102,8 +72,6 @@ impl Default for App {
         Self {
             state,
             tree,
-            request_tree,
-            response_tree,
             params_view: Default::default(),
         }
     }
