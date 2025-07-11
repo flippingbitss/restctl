@@ -18,7 +18,7 @@ impl ParamsEditorView {
                 }
             }
 
-            if ui.button("Delete All").clicked() {
+            if ui.button("Delete All \u{e872}").clicked() {
                 values.clear();
             }
         });
@@ -132,12 +132,12 @@ impl ParamsEditorView {
                     .desired_width(200.0),
             );
             if values.len() > 1 {
-                let close = ui.add(egui::Button::new("X"));
+                let close = ui.add(egui::Button::new("\u{e5cd}"));
                 if close.clicked() {
                     values.remove(index);
                 }
             } else {
-                ui.add_enabled(false, egui::Button::new("X"));
+                ui.add_enabled(false, egui::Button::new("\u{e5cd}"));
             }
 
             // Check for drag interaction and set drag payload
