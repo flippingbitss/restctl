@@ -9,12 +9,13 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
     // The central panel the region left after adding TopPanel's and SidePanel's
     ui.add_space(10.0);
     ui.horizontal(|ui| {
+        ui.add_space(10.0);
         egui::ComboBox::from_id_salt("http.method")
             .selected_text(format!("{:?}", &state.method))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.method, HttpMethod::Get, "GET");
-                ui.selectable_value(&mut state.method, HttpMethod::Head, "HEAD");
-                ui.selectable_value(&mut state.method, HttpMethod::Post, "POST");
+                for method in HttpMethod::values_iter() {
+                    ui.selectable_value(&mut state.method, method, method.to_string());
+                }
             });
 
         ui.add(

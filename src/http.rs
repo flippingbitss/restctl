@@ -1,12 +1,33 @@
 use core::fmt;
 
-use crate::core::RequestState;
+use crate::core::{Param, RequestState};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {
     Get,
     Post,
+    Put,
     Head,
+    Options,
+    Delete,
+    Patch,
+    Connect,
+}
+
+impl HttpMethod {
+    pub fn values_iter() -> impl Iterator<Item = HttpMethod> {
+        [
+            HttpMethod::Get,
+            HttpMethod::Post,
+            HttpMethod::Put,
+            HttpMethod::Patch,
+            HttpMethod::Delete,
+            HttpMethod::Head,
+            HttpMethod::Options,
+            HttpMethod::Connect,
+        ]
+        .into_iter()
+    }
 }
 
 impl fmt::Display for HttpMethod {
@@ -15,6 +36,11 @@ impl fmt::Display for HttpMethod {
             HttpMethod::Get => write!(f, "GET"),
             HttpMethod::Post => write!(f, "POST"),
             HttpMethod::Head => write!(f, "HEAD"),
+            HttpMethod::Put => write!(f, "PUT"),
+            HttpMethod::Options => write!(f, "OPTIONS"),
+            HttpMethod::Delete => write!(f, "DELETE"),
+            HttpMethod::Patch => write!(f, "PATCH"),
+            HttpMethod::Connect => write!(f, "CONNECT"),
         }
     }
 }
@@ -55,14 +81,29 @@ pub fn execute(
     input: HttpRequest,
     callback: impl 'static + Send + FnOnce(Result<HttpResponse, HttpError>),
 ) {
-    let mut request = match input.method {
-        HttpMethod::Get => ehttp::Request::get(input.url),
-        HttpMethod::Post => ehttp::Request::post(input.url, input.body.unwrap()),
-        HttpMethod::Head => ehttp::Request::head(input.url),
+    let request = {
+        let method = input.method.to_string();
+        let url = input.url;
+        let body = input.body.unwrap_or_else(|| Vec::new());
+        let headers = ehttp::Headers {
+            headers: input.headers,
+        };
+        match input.method {
+            HttpMethod::Get => ehttp::Request::get(url),
+            HttpMethod::Post => ehttp::Request::post(url, body),
+            HttpMethod::Head => ehttp::Request::head(url),
+            _ => ehttp::Request {
+                method,
+                url,
+                body,
+                headers,
+                // mode is required on web
+                #[cfg(target_arch = "wasm32")]
+                mode: ehttp::Mode::Cors,
+            },
+        }
     };
-    request.headers = ehttp::Headers {
-        headers: input.headers.clone(),
-    };
+
     ehttp::fetch(request, |response| {
         let mapped = match response {
             Ok(value) => Ok(HttpResponse::from(value)),
@@ -73,21 +114,19 @@ pub fn execute(
 }
 
 pub fn execute_with_state(state: &mut RequestState) {
+    let filter_params = |params: &[Param]| {
+        params
+            .iter()
+            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
+            .map(|p| (p.key.clone(), p.value.clone()))
+            .collect()
+    };
+
     let input = HttpRequest {
         url: state.url.clone(),
         method: state.method,
-        query: state
-            .query
-            .iter()
-            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-            .map(|p| (p.key.clone(), p.value.clone()))
-            .collect(),
-        headers: state
-            .query
-            .iter()
-            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-            .map(|p| (p.key.clone(), p.value.clone()))
-            .collect(),
+        query: filter_params(&state.query),
+        headers: filter_params(&state.headers),
         body: None,
     };
 
