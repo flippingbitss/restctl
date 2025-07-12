@@ -54,26 +54,27 @@ impl ParamsEditorView {
         for current_item_index in 0..(values.len()) {
             // Render list item and get drag handle's response and list item's response
             let list_item_response = self.list_item_ui(ui, values, current_item_index);
-            let drag_response = list_item_response.inner;
-            let item_response = list_item_response.response;
+            if let Some(drag_response) = list_item_response.inner {
+                let item_response = list_item_response.response;
 
-            if drag_response.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-            }
-            if drag_response.drag_started() {
-                drag_response.dnd_set_drag_payload(current_item_index);
-            }
-            // If a drag payload exists, find the target position
-            let source_item_index = egui::DragAndDrop::payload::<usize>(ui.ctx()).map(|i| *i);
+                if drag_response.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+                if drag_response.drag_started() {
+                    drag_response.dnd_set_drag_payload(current_item_index);
+                }
+                // If a drag payload exists, find the target position
+                let source_item_index = egui::DragAndDrop::payload::<usize>(ui.ctx()).map(|i| *i);
 
-            self.find_drop_target(
-                ui,
-                source_item_index,
-                current_item_index,
-                item_response.rect,
-                half_spacing_amt, // we use this offset to get consistent indicator position
-                &mut drop_target_result,
-            );
+                self.find_drop_target(
+                    ui,
+                    source_item_index,
+                    current_item_index,
+                    item_response.rect,
+                    half_spacing_amt, // we use this offset to get consistent indicator position
+                    &mut drop_target_result,
+                );
+            }
         }
 
         // perform the insertion
@@ -108,46 +109,48 @@ impl ParamsEditorView {
         ui: &mut egui::Ui,
         values: &mut Vec<Param>,
         index: usize,
-    ) -> egui::InnerResponse<egui::Response> {
+    ) -> egui::InnerResponse<Option<egui::Response>> {
         ui.horizontal(|ui| {
-            let param = &mut values[index];
+            if let Some(param) = values.get_mut(index) {
+                let drag_icon = egui::Label::new("\u{e945}")
+                    .sense(egui::Sense::empty())
+                    .selectable(false);
 
-            let drag_icon = egui::Label::new("\u{e945}")
-                .sense(egui::Sense::empty())
-                .selectable(false);
+                let drag_handle = ui.add(drag_icon);
 
-            let drag_handle = ui.add(drag_icon);
-
-            ui.add(egui::Checkbox::without_text(&mut param.enabled));
-            ui.add_enabled(
-                param.enabled,
-                egui::TextEdit::singleline(&mut param.key)
-                    .hint_text("Key")
-                    .desired_width(150.0),
-            );
-            ui.add_enabled(
-                param.enabled,
-                egui::TextEdit::singleline(&mut param.value)
-                    .hint_text("Value")
-                    .desired_width(200.0),
-            );
-            if values.len() > 1 {
-                let close = ui.add(egui::Button::new("\u{e5cd}"));
-                if close.clicked() {
-                    values.remove(index);
+                ui.add(egui::Checkbox::without_text(&mut param.enabled));
+                ui.add_enabled(
+                    param.enabled,
+                    egui::TextEdit::singleline(&mut param.key)
+                        .hint_text("Key")
+                        .desired_width(150.0),
+                );
+                ui.add_enabled(
+                    param.enabled,
+                    egui::TextEdit::singleline(&mut param.value)
+                        .hint_text("Value")
+                        .desired_width(200.0),
+                );
+                if values.len() > 1 {
+                    let close = ui.add(egui::Button::new("\u{e5cd}"));
+                    if close.clicked() {
+                        values.remove(index);
+                    }
+                } else {
+                    ui.add_enabled(false, egui::Button::new("\u{e5cd}"));
                 }
-            } else {
-                ui.add_enabled(false, egui::Button::new("\u{e5cd}"));
-            }
 
-            // Check for drag interaction and set drag payload
-            // let mut drag_response =
-            let drag_response = ui.interact(
-                drag_handle.rect,
-                drag_handle.id,
-                egui::Sense::click_and_drag(),
-            );
-            drag_response
+                // Check for drag interaction and set drag payload
+                // let mut drag_response =
+                let drag_response = ui.interact(
+                    drag_handle.rect,
+                    drag_handle.id,
+                    egui::Sense::click_and_drag(),
+                );
+                Some(drag_response)
+            } else {
+                None
+            }
         })
     }
 

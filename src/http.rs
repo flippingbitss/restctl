@@ -127,7 +127,7 @@ pub fn execute_with_state(state: &mut RequestState) {
         method: state.method,
         query: filter_params(&state.query),
         headers: filter_params(&state.headers),
-        body: None,
+        body: Some(state.body.as_bytes().into()),
     };
 
     log::info!("{:?}", input);

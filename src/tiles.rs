@@ -6,7 +6,7 @@ use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 use log::{debug, info, log};
 
 use crate::{
-    components::params_editor_view::ParamsEditorView,
+    components::{body_editor_view, params_editor_view::ParamsEditorView},
     core::{Param, RequestState},
 };
 
@@ -18,7 +18,7 @@ pub struct Pane {
 
 impl std::fmt::Debug for Pane {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("View").field("nr", &self.nr).finish()
+        write!(f, "{} - {}", self.nr, self.kind)
     }
 }
 
@@ -88,7 +88,10 @@ impl Pane {
                     PaneKind::Headers => {
                         params_view.show(ui, &mut state.headers);
                     }
-                    _ => unreachable!(),
+                    PaneKind::Body => {
+                        body_editor_view::show(ui, &mut state.body);
+                    }
+                    _ => {}
                 }
                 ui.allocate_rect(ui.max_rect(), Sense::empty());
             });
@@ -207,12 +210,20 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
         _scroll_offset: &mut f32,
     ) {
         ui.horizontal(|ui| {
-            if ui.small_button("Headers +").clicked() {
-                self.add_child_to = Some((tile_id, PaneKind::Headers));
-            }
-            if ui.small_button("Params +").clicked() {
-                self.add_child_to = Some((tile_id, PaneKind::QueryParams));
-            }
+            ui.add_space(12.0);
+            egui::menu::menu_button(ui, "Add", |ui| {
+                for kind in [
+                    PaneKind::QueryParams,
+                    PaneKind::Headers,
+                    PaneKind::Body,
+                    PaneKind::Auth,
+                    PaneKind::Script,
+                ] {
+                    if ui.selectable_label(false, kind.to_string()).clicked() {
+                        self.add_child_to = Some((tile_id, kind));
+                    }
+                }
+            });
             ui.separator();
         });
     }
