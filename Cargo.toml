@@ -2,7 +2,7 @@
 name = "restctl"
 version = "0.1.0"
 authors = ["flippingbitss <matharumanpreet00@gmail.com>"]
-edition = "2021"
+edition = "2024"
 include = ["LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 # rust-version = "1.81"
 
@@ -26,6 +26,7 @@ egui_tiles = "0.12.0"
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.140"
+egui_extras = { version = "0.31.1", features = ["syntect"]}
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
