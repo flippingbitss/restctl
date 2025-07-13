@@ -54,7 +54,7 @@ pub struct HttpRequest {
     pub body: Option<Vec<u8>>,
 }
 
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct HttpResponse {
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
@@ -73,8 +73,9 @@ impl From<ehttp::Response> for HttpResponse {
     }
 }
 
+#[derive(Debug)]
 pub enum HttpError {
-    Unknown,
+    Unknown(String),
 }
 
 pub fn execute(
@@ -107,8 +108,9 @@ pub fn execute(
     ehttp::fetch(request, |response| {
         let mapped = match response {
             Ok(value) => Ok(HttpResponse::from(value)),
-            Err(_) => Err(HttpError::Unknown),
+            Err(err) => Err(HttpError::Unknown(err)),
         };
+        log::info!("{:?}", mapped);
         callback(mapped);
     });
 }
@@ -136,6 +138,15 @@ pub fn execute_with_state(state: &mut RequestState) {
         Ok(resp) => {
             *response_store.lock().unwrap() = Some(resp);
         }
-        Err(_) => {}
+        Err(resp) => match resp {
+            HttpError::Unknown(err) => {
+                *response_store.lock().unwrap() = Some(HttpResponse {
+                    headers: Default::default(),
+                    body: err.into_bytes(),
+                    status: 500,
+                    status_text: "Unknown failure".into(),
+                })
+            }
+        },
     });
 }

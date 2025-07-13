@@ -5,10 +5,10 @@ use std::{
 };
 
 use egui::{
+    CornerRadius, Frame, RichText, Shadow, ThemePreference, Vec2,
     ahash::HashMap,
     epaint::text::{FontInsert, InsertFontFamily},
     panel::TopBottomSide,
-    CornerRadius, Frame, RichText, Shadow, ThemePreference, Vec2,
 };
 use egui_tiles::Tree;
 
@@ -51,14 +51,16 @@ impl Default for App {
         let mut request_tabs = vec![];
         request_tabs.push({
             let left = tiles.insert_pane(gen_view(PaneKind::QueryParams));
-            let right = tiles.insert_pane(gen_view(PaneKind::Headers));
-            tiles.insert_horizontal_tile(vec![left, right])
+            let middle = tiles.insert_pane(gen_view(PaneKind::Headers));
+            let right = tiles.insert_pane(gen_view(PaneKind::Body));
+            tiles.insert_horizontal_tile(vec![left, middle, right])
         });
 
         let mut response_tabs = vec![];
         response_tabs.push({
-            let left = tiles.insert_pane(gen_view(PaneKind::QueryParams));
-            let right = tiles.insert_pane(gen_view(PaneKind::Headers));
+            let left = tiles.insert_pane(gen_view(PaneKind::ResponseHeaders));
+            let right = tiles.insert_pane(gen_view(PaneKind::ResponseBody));
+
             tiles.insert_horizontal_tile(vec![left, right])
         });
 
@@ -178,15 +180,19 @@ impl App {
             let resp = &*response;
 
             if let Some(resp) = resp {
-                let body = serde_json::from_slice::<serde_json::Value>(&resp.body).unwrap();
-                let prettified = serde_json::to_string_pretty(&body).unwrap();
+                let body = serde_json::from_slice::<serde_json::Value>(&resp.body);
+                if let Ok(body) = body {
+                    let prettified = serde_json::to_string_pretty(&body).unwrap();
 
-                Some((
-                    prettified,
-                    resp.headers.clone(),
-                    resp.status,
-                    resp.status_text.clone(),
-                ))
+                    Some((
+                        prettified,
+                        resp.headers.clone(),
+                        resp.status,
+                        resp.status_text.clone(),
+                    ))
+                } else {
+                    None
+                }
             } else {
                 None
             }

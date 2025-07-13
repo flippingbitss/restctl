@@ -1,12 +1,15 @@
 use core::fmt;
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
 
 use egui::{Color32, CornerRadius, Id, Margin, Rect, RichText, Sense};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 use log::{debug, info, log};
 
 use crate::{
-    components::{body_editor_view, params_editor_view::ParamsEditorView},
+    components::{
+        body_editor_view, body_reader_view, params_editor_view::ParamsEditorView,
+        params_reader_view,
+    },
     core::{Param, RequestState},
 };
 
@@ -29,6 +32,10 @@ pub enum PaneKind {
     Body,
     Auth,
     Script,
+
+    // TODO: (temp) move to its own parent enum
+    ResponseBody,
+    ResponseHeaders,
 }
 
 impl fmt::Display for PaneKind {
@@ -39,6 +46,8 @@ impl fmt::Display for PaneKind {
             PaneKind::Body => write!(f, "Body"),
             PaneKind::Auth => write!(f, "Auth"),
             PaneKind::Script => write!(f, "Script"),
+            PaneKind::ResponseBody => write!(f, "Response Body"),
+            PaneKind::ResponseHeaders => write!(f, "Response Headers"),
         }
     }
 }
@@ -90,6 +99,33 @@ impl Pane {
                     }
                     PaneKind::Body => {
                         body_editor_view::show(ui, &mut state.body);
+                    }
+                    PaneKind::ResponseBody => {
+                        let guard = state.response.lock().unwrap();
+                        let response = guard.deref();
+                        if let Some(response) = response {
+                            // TODO:
+                            // remove inline conversion, will be expensive for large payloads
+                            body_reader_view::show(
+                                ui,
+                                std::str::from_utf8(&response.body).unwrap_or_default(),
+                            );
+                        } else {
+                            ui.label("No response yet");
+                        }
+                    }
+                    PaneKind::ResponseHeaders => {
+                        let guard = state.response.lock().unwrap();
+                        let response = guard.deref();
+                        if let Some(response) = response {
+                            params_reader_view::show(
+                                Id::new("response_headers"),
+                                ui,
+                                &response.headers,
+                            );
+                        } else {
+                            ui.label("No response yet");
+                        }
                     }
                     _ => {}
                 }
@@ -211,13 +247,15 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
     ) {
         ui.horizontal(|ui| {
             ui.add_space(12.0);
-            egui::menu::menu_button(ui, "Add", |ui| {
+            egui::menu::menu_button(ui, "+", |ui| {
                 for kind in [
                     PaneKind::QueryParams,
                     PaneKind::Headers,
                     PaneKind::Body,
                     PaneKind::Auth,
                     PaneKind::Script,
+                    PaneKind::ResponseBody,
+                    PaneKind::ResponseHeaders,
                 ] {
                     if ui.selectable_label(false, kind.to_string()).clicked() {
                         self.add_child_to = Some((tile_id, kind));
@@ -473,7 +511,7 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
         //     visuals.panel_fill // same as the tab contents
         // } else {
         Color32::TRANSPARENT // fade into background
-                             // }
+        // }
     }
 
     fn tab_outline_stroke(
