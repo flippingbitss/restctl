@@ -1,6 +1,33 @@
 use core::fmt;
 
-use crate::core::{Param, RequestState};
+use crate::core::RequestState;
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Param {
+    pub enabled: bool,
+    pub key: String,
+    pub value: String,
+}
+
+impl Default for Param {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            key: Default::default(),
+            value: Default::default(),
+        }
+    }
+}
+
+impl Param {
+    pub fn enabled(key: String, value: String) -> Self {
+        Param {
+            enabled: true,
+            key,
+            value,
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {

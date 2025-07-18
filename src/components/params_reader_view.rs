@@ -1,4 +1,4 @@
-use crate::core::Param;
+use crate::http::Param;
 
 pub fn show(id: egui::Id, ui: &mut egui::Ui, values: &[(String, String)]) {
     egui::Grid::new(id)

@@ -1,4 +1,4 @@
-use egui::{Context, Margin};
+use egui::{FontId, FontSelection, Layout, Margin, TextStyle, Vec2};
 
 use crate::{
     core::RequestState,
@@ -10,27 +10,54 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
     ui.add_space(10.0);
     ui.horizontal(|ui| {
         ui.add_space(10.0);
-        egui::ComboBox::from_id_salt("http.method")
-            .selected_text(format!("{:?}", &state.method))
-            .show_ui(ui, |ui| {
-                for method in HttpMethod::values_iter() {
-                    ui.selectable_value(&mut state.method, method, method.to_string());
-                }
-            });
+        ui.scope(|ui| {
+            ui.style_mut().spacing.button_padding = Vec2::new(8.0, 6.5);
 
-        ui.add(
-            egui::TextEdit::singleline(&mut state.url)
-                .margin(Margin::same(6))
-                .hint_text("http://httpbin.org/get"),
-        );
-        if ui.button("Send").clicked() {
-            http::execute_with_state(state);
-        }
-        // ui.selectable_label
-        // ui.horizontal(|ui| {
-        //     ui.selectable_value(&mut state.method, HttpMethod::Get, "GET");
-        //     ui.selectable_value(&mut state.method, HttpMethod::Head, "HEAD");
-        //     ui.selectable_value(&mut state.method, HttpMethod::Post, "POST");
-        // });
+            egui::ComboBox::from_id_salt("http.method")
+                .selected_text(state.method.to_string())
+                .show_ui(ui, |ui| {
+                    for method in HttpMethod::values_iter() {
+                        ui.selectable_value(&mut state.method, method, method.to_string());
+                    }
+                });
+
+            ui.allocate_ui_with_layout(
+                ui.available_size_before_wrap(),
+                Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.allocate_space(egui::Vec2::new(ui.available_width() / 2.0, 1.0));
+
+                    if ui.small_button("Duplicate").clicked() {
+                        // TODO: impl duplicate request,
+                        // one of:
+                        //      pass in entire request collection
+                        //      send a message upstream
+                        //      return a typed response
+                    }
+
+                    if ui.button("Send").clicked() {
+                        // if ui.button("Send").clicked() {
+                        http::execute_with_state(state);
+                    }
+
+                    ui.add_sized(
+                        ui.available_size_before_wrap(),
+                        egui::TextEdit::singleline(&mut state.url)
+                            .code_editor()
+                            .font(FontSelection::FontId(FontId::monospace(14.0)))
+                            .margin(Margin::same(6))
+                            .hint_text("http://httpbin.org/get"),
+                    );
+                },
+            );
+
+            // ui.selectable_label
+            // ui.horizontal(|ui| {
+            //     ui.selectable_value(&mut state.method, HttpMethod::Get, "GET");
+            //     ui.selectable_value(&mut state.method, HttpMethod::Head, "HEAD");
+            //     ui.selectable_value(&mut state.method, HttpMethod::Post, "POST");
+            // });
+        });
     });
+    ui.add_space(10.0);
 }

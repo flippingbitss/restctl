@@ -1,16 +1,15 @@
 use core::fmt;
-use std::{fmt::Display, ops::Deref};
+use std::ops::Deref;
 
-use egui::{Color32, CornerRadius, Id, Margin, Rect, RichText, Sense};
+use egui::{Color32, Id, Margin, Rect, Sense};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
-use log::{debug, info, log};
 
 use crate::{
     components::{
         body_editor_view, body_reader_view, params_editor_view::ParamsEditorView,
         params_reader_view,
     },
-    core::{Param, RequestState},
+    core::RequestState,
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]

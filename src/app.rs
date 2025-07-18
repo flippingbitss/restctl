@@ -1,22 +1,19 @@
 use std::{
-    any::Any,
-    sync::{Arc, Mutex},
-    thread,
+    collections::HashMap,
+    hash::{RandomState, SipHasher},
+    sync::atomic::AtomicUsize,
 };
 
-use egui::{
-    CornerRadius, Frame, RichText, Shadow, ThemePreference, Vec2,
-    ahash::HashMap,
-    epaint::text::{FontInsert, InsertFontFamily},
-    panel::TopBottomSide,
-};
-use egui_tiles::Tree;
+use egui::{Frame, RichText, TextWrapMode, ThemePreference};
+use egui_tiles::{Container, SimplificationOptions, Tree};
 
 use crate::{
-    components::{params_editor_view::ParamsEditorView, params_reader_view},
-    core::{Param, RequestState},
+    components::{
+        navigation_bar_view::NavBarTabsBehavior, params_editor_view::ParamsEditorView,
+        params_reader_view,
+    },
+    core::{RequestId, RequestState},
     header,
-    http::{self, HttpMethod, HttpRequest, HttpResponse},
     tiles::{Pane, PaneKind, TreeBehavior},
 };
 
@@ -24,15 +21,17 @@ use crate::{
 enum StateId {
     Request,
 }
-
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    state: RequestState,
+    state: Vec<(RequestId, RequestState)>,
 
+    active_request_id: RequestId,
+
+    // navigation_tree: egui_tiles::Tree<RequestId>,
     #[serde(skip)]
-    tree: egui_tiles::Tree<Pane>,
+    request_tree: egui_tiles::Tree<Pane>,
 
     #[serde(skip)]
     params_view: ParamsEditorView,
@@ -46,7 +45,6 @@ impl Default for App {
             next_view_nr += 1;
             view
         };
-
         let mut tiles = egui_tiles::Tiles::default();
         let mut request_tabs = vec![];
         request_tabs.push({
@@ -68,12 +66,26 @@ impl Default for App {
         let response_container = tiles.insert_tab_tile(response_tabs);
         let root = tiles.insert_vertical_tile(vec![request_container, response_container]);
 
-        let tree = egui_tiles::Tree::new("my_tree", root, tiles);
-        let state = RequestState::default();
+        let request_tree = egui_tiles::Tree::new("request_tree", root, tiles);
 
+        let mut state = Vec::with_capacity(10);
+        let request_id = RequestId::next();
+        state.push((request_id, RequestState::default()));
+        //
+        // let mut navigation_tiles = egui_tiles::Tiles::default();
+        // let mut navigation_tabs = Vec::new();
+        // for request in state.keys().cloned() {
+        //     navigation_tabs.push(navigation_tiles.insert_pane(request));
+        // }
+        // let root = navigation_tiles.insert_tab_tile(navigation_tabs);
+        //
+        // let navigation_tree = egui_tiles::Tree::new("navigation_tree", root, navigation_tiles);
+        //
         Self {
-            state,
-            tree,
+            state: state,
+            active_request_id: request_id,
+            request_tree: request_tree,
+            // navigation_tree: navigation_tree,
             params_view: Default::default(),
         }
     }
@@ -97,6 +109,16 @@ impl App {
 
         Default::default()
     }
+
+    fn empty_ui(&mut self, ui: &mut egui::Ui, _: &egui::Context) {
+        ui.horizontal(|ui| {
+            ui.label("No requests yet. ");
+            if ui.button("Create One").clicked() {
+                self.state
+                    .push((RequestId::next(), RequestState::default()));
+            }
+        });
+    }
 }
 
 impl eframe::App for App {
@@ -107,7 +129,7 @@ impl eframe::App for App {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_theme(ThemePreference::Dark);
-        self.layout_ui(ctx);
+        self.ui(ctx);
     }
 }
 
@@ -118,9 +140,8 @@ impl App {
     //         .map(|s| s.as_ref())
     //         .expect("no request state")
     // }
-    fn layout_ui(&mut self, ctx: &egui::Context) {
-        // egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {});
 
+    fn ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(false)
             .exact_height(32.0)
@@ -137,82 +158,70 @@ impl App {
 
             ui.collapsing("Tree", |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                let tree_debug = format!("{:#?}", self.tree);
+                let tree_debug = format!("{:#?}", self.request_tree);
                 ui.monospace(&tree_debug);
             });
 
             ui.separator();
-            let area = egui::containers::scroll_area::ScrollArea::vertical();
-            area.show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    let code_points = include_str!(
-                        "../assets/fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].codepoints"
-                    );
-                    for line in code_points.lines() {
-                        let (label, code) = line.split_once(" ").unwrap();
-                        let value = u32::from_str_radix(code, 16).unwrap();
-                        let ch = char::from_u32(value).unwrap();
-                        ui.label(format!("{}", ch));
-                    }
-                });
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("Open Requests ({})", self.state.len())).size(16.0),
+                );
+
+                if ui.button("New Request").clicked() {
+                    self.state.push((RequestId::next(), Default::default()));
+                }
+            });
+            // ui.add(egui::TextEdit::singleline(text).hint_text("Search Requests via URL"));
+            ui.separator();
+
+            let row_height = ui.text_style_height(&egui::TextStyle::Body);
+            ui.scope(|ui| {
+                ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
+                egui::ScrollArea::vertical().show_rows(
+                    ui,
+                    row_height,
+                    self.state.len(),
+                    |ui, range| {
+                        for (request_id, state) in self.state.iter() {
+                            let url = if state.url.is_empty() {
+                                "<empty>".to_owned()
+                            } else {
+                                state.url.clone()
+                            };
+                            let label = format!("{}: {} {}", request_id.0, state.method, url);
+
+                            let width = ui.available_width();
+                            if ui
+                                .selectable_label(self.active_request_id == *request_id, label)
+                                .clicked()
+                            {
+                                self.active_request_id = *request_id;
+                            }
+                        }
+                    },
+                )
             });
 
-            if let Some(root) = self.tree.root() {
-                // tree_ui(ui, &mut self.tabs.behavior, &mut self.tabs.tree.tiles, root);
-            }
-
-            // if let Some(parent) = tiles_behavior.add_child_to.take() {
-            //     let new_child = self
-            //         .tree
-            //         .tiles
-            //         .insert_pane(Pane::from_values(100, PaneKind::QueryParams));
-            //     if let Some(egui_tiles::Tile::Container(egui_tiles::Container::Tabs(tabs))) =
-            //         self.tree.tiles.get_mut(parent)
-            //     {
-            //         tabs.add_child(new_child);
-            //         tabs.set_active(new_child);
-            //     }
-            // }
+            ui.allocate_space(ui.available_size());
+            // let area = egui::containers::scroll_area::ScrollArea::vertical();
+            // area.show(ui, |ui| {
+            //     ui.horizontal_wrapped(|ui| {
+            //         let code_points = include_str!(
+            //             "../assets/fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].codepoints"
+            //         );
+            //         for line in code_points.lines() {
+            //             let (label, code) = line.split_once(" ").unwrap();
+            //             let value = u32::from_str_radix(code, 16).unwrap();
+            //             let ch = char::from_u32(value).unwrap();
+            //             ui.label(format!("{}", ch));
+            //         }
+            //     });
+            // });
         });
 
-        let output = {
-            let response = self.state.response.lock().unwrap();
-            let resp = &*response;
-
-            if let Some(resp) = resp {
-                let body = serde_json::from_slice::<serde_json::Value>(&resp.body);
-                if let Ok(body) = body {
-                    let prettified = serde_json::to_string_pretty(&body).unwrap();
-
-                    Some((
-                        prettified,
-                        resp.headers.clone(),
-                        resp.status,
-                        resp.status_text.clone(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        egui::SidePanel::right("right_panel").show(ctx, |ui| {
-            ui.heading("right side panel");
-
-            egui::containers::ScrollArea::vertical().show(ui, |ui| {
-                if let Some((body, headers, status, status_text)) = output {
-                    ui.label(format!("Status: {} {}", status, status_text));
-                    ui.label("Headers: ");
-                    params_reader_view::show("response_headers".into(), ui, &headers);
-                    ui.label("Body: ");
-                    ui.label(RichText::new(body).monospace());
-                } else {
-                    ui.label("No response yet");
-                }
-            });
-
+        egui::SidePanel::right("side_panel_right").show(ctx, |ui| {
+            ui.heading("Right Panel");
             ui.allocate_space(ui.available_size());
         });
 
@@ -223,41 +232,99 @@ impl App {
                     .fill(ctx.style().visuals.panel_fill),
             )
             .show(ctx, |ui| {
-                header::show(ui, &mut self.state);
-                // let mut state = self.state.lock().unwrap();
-                // ui.group(|ui| {
-                //     ui.horizontal_wrapped(|ui| {
-                //         let mut state = self.state.lock().unwrap();
-                //         let method = state.method;
-                //         ui.selectable_value(
-                //             &mut state.method,
-                //             HttpMethod::Get,
-                //             format!("{}", method),
-                //         );
-                //         ui.text_edit_singleline(&mut state.url);
-                //     });
-                // });
-                //
-
-                let mut tiles_behavior =
-                    TreeBehavior::default_with_state(&mut self.state, &mut self.params_view);
-                self.tree.ui(&mut tiles_behavior, ui);
-
-                if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
-                    let pane_id = self
-                        .tree
-                        .tiles
-                        .insert_pane(Pane::from_values(101, pane_kind));
-
-                    let parent = self.tree.tiles.get_mut(tile_id).unwrap();
-
-                    match parent {
-                        egui_tiles::Tile::Container(container) => {
-                            container.add_child(pane_id);
-                        }
-                        _ => {}
+                if self.state.is_empty() {
+                    self.empty_ui(ui, ctx);
+                } else {
+                    if self.state.iter().all(|el| el.0 != self.active_request_id) {
+                        self.active_request_id = self.state.first().unwrap().0;
                     }
+
+                    // if let Some(root) = self.navigation_tree.root {
+                    //     let child = self.navigation_tree.tiles.insert_pane(next);
+                    //     log::info!("root exists");
+                    //     if let Some(parent) = self.navigation_tree.tiles.get_mut(root) {
+                    //         match parent {
+                    //             egui_tiles::Tile::Container(parent) => {
+                    //                 log::info!("found a parent container");
+                    //                 parent.add_child(child);
+                    //             }
+                    //             _ => {
+                    //                 log::info!("not a container");
+                    //             }
+                    //         }
+                    //     }
+                    //
+                    //     self.navigation_tree.tiles.insert_tab_tile(vec![child]);
+                    // }
+                    // let root_id = self.navigation_tree.root.unwrap();
+                    //
+                    // let child = self.navigation_tree.tiles.insert_pane(next);
+                    // let root = self.navigation_tree.tiles.get_mut(root_id).unwrap();
+
+                    // let (tileId, tile) = self.navigation_tree.tiles.iter_mut().nth(0).unwrap();
+                    // let mut nav_behavior = NavBarTabsBehavior {
+                    //     simplification_options: SimplificationOptions {
+                    //         all_panes_must_have_tabs: true,
+                    //         ..Default::default()
+                    //     },
+                    // };
+                    //
+                    self.request_ui(self.active_request_id, ui, ctx);
+                    //
+                    // self.navigation_tree.ui(&mut nav_behavior, ui);
+                    // self.top_ui(ctx);
                 }
             });
+    }
+
+    fn get_response(
+        state: &mut RequestState,
+    ) -> Option<(String, Vec<(String, String)>, u16, String)> {
+        let response = &*state.response.lock().unwrap();
+        // let response = &*response;
+        let mut result = None;
+        if let Some(resp) = response {
+            let body = serde_json::from_slice::<serde_json::Value>(&resp.body);
+            if let Ok(body) = body {
+                let prettified = serde_json::to_string_pretty(&body).unwrap();
+                result = Some((
+                    prettified,
+                    resp.headers.clone(),
+                    resp.status,
+                    resp.status_text.clone(),
+                ))
+            }
+        }
+        result
+    }
+
+    fn request_ui(&mut self, request_id: RequestId, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let callback = || {
+            self.state.push((RequestId::next(), Default::default()));
+        };
+        let mut state = self.state.iter_mut().find(|el| el.0 == request_id);
+
+        if let Some((_, state)) = state {
+            // let response = Self::get_response(state);
+            header::show(ui, state);
+            let mut tiles_behavior = TreeBehavior::default_with_state(state, &mut self.params_view);
+            self.request_tree.ui(&mut tiles_behavior, ui);
+
+            if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
+                let pane_id = self
+                    .request_tree
+                    .tiles
+                    .insert_pane(Pane::from_values(101, pane_kind));
+
+                let parent = self.request_tree.tiles.get_mut(tile_id).unwrap();
+
+                match parent {
+                    egui_tiles::Tile::Container(container) => {
+                        container.add_child(pane_id);
+                    }
+                    _ => {}
+                }
+            }
+        };
     }
 }

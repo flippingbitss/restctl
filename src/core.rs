@@ -1,37 +1,25 @@
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct Param {
-    pub enabled: bool,
-    pub key: String,
-    pub value: String,
-}
-
-impl Default for Param {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            key: Default::default(),
-            value: Default::default(),
-        }
-    }
-}
-
-impl Param {
-    pub fn enabled(key: String, value: String) -> Self {
-        Param {
-            enabled: true,
-            key,
-            value,
-        }
-    }
-}
-
 pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicUsize};
 
-use crate::http::{HttpMethod, HttpResponse};
+use crate::http::{HttpMethod, HttpResponse, Param};
+
+static ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+pub fn get_new_id() -> usize {
+    ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub struct RequestId(pub usize);
+
+impl RequestId {
+    pub fn next() -> Self {
+        Self(get_new_id())
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct RequestState {

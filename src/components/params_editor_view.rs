@@ -1,4 +1,4 @@
-use crate::core::Param;
+use crate::http::Param;
 
 #[derive(Default, serde::Deserialize)]
 pub struct ParamsEditorView {
