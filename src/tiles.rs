@@ -6,7 +6,9 @@ use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 
 use crate::{
     components::{
-        body_editor_view, body_reader_view, params_editor_view::ParamsEditorView,
+        body_editor_view,
+        body_reader_view::{self, BodyReaderView},
+        params_editor_view::ParamsEditorView,
         params_reader_view,
     },
     core::RequestState,
@@ -59,6 +61,7 @@ impl Pane {
         &mut self,
         state: &mut RequestState,
         params_view: &mut ParamsEditorView,
+        body_reader_view: &mut BodyReaderView,
         ui: &mut egui::Ui,
     ) -> egui_tiles::UiResponse {
         let color = egui::epaint::Hsva::new(0.103 * self.nr as f32, 0.5, 0.5, 1.0);
@@ -85,12 +88,7 @@ impl Pane {
                         let guard = state.response.lock().unwrap();
                         let response = guard.deref();
                         if let Some(response) = response {
-                            // TODO:
-                            // remove inline conversion, will be expensive for large payloads
-                            body_reader_view::show(
-                                ui,
-                                std::str::from_utf8(&response.body).unwrap_or_default(),
-                            );
+                            body_reader_view.show(ui, &response.body_raw, &response.body_pretty);
                         } else {
                             ui.label("No response yet");
                         }
@@ -128,14 +126,16 @@ pub struct TreeBehavior<'a> {
     pub gap_width: f32,
     pub add_child_to: Option<(egui_tiles::TileId, PaneKind)>,
     pub state: &'a mut RequestState,
-    // TODO: move to request view
+    // TODO: move these to request view and move req state under it
     pub params_view: &'a mut ParamsEditorView,
+    pub body_reader_view: &'a mut BodyReaderView,
 }
 
 impl<'a> TreeBehavior<'a> {
     pub fn default_with_state(
         state: &'a mut RequestState,
         params_view: &'a mut ParamsEditorView,
+        body_reader_view: &'a mut BodyReaderView,
     ) -> Self {
         Self {
             simplification_options: SimplificationOptions {
@@ -147,6 +147,7 @@ impl<'a> TreeBehavior<'a> {
             add_child_to: None,
             state,
             params_view,
+            body_reader_view,
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -193,7 +194,12 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
         _tile_id: egui_tiles::TileId,
         view: &mut Pane,
     ) -> egui_tiles::UiResponse {
-        view.pane_ui(&mut self.state, &mut self.params_view, ui)
+        view.pane_ui(
+            &mut self.state,
+            &mut self.params_view,
+            &mut self.body_reader_view,
+            ui,
+        )
     }
 
     fn tab_title_for_pane(&mut self, view: &Pane) -> egui::WidgetText {

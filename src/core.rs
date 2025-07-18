@@ -54,7 +54,8 @@ impl RequestState {
 impl Default for RequestState {
     fn default() -> Self {
         RequestState {
-            url: String::new(),
+            // url: String::new(),
+            url: "http://httpbin.org/get".to_owned(),
             body: String::new(),
             method: HttpMethod::Get,
             // query: vec![Default::default()],

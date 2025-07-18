@@ -1,7 +1,7 @@
 use egui::{Frame, TextWrapMode, ThemePreference};
 
 use crate::{
-    components::params_editor_view::ParamsEditorView,
+    components::{body_reader_view::BodyReaderView, params_editor_view::ParamsEditorView},
     core::{RequestId, RequestState},
     header,
     tiles::{Pane, PaneKind, TreeBehavior},
@@ -25,6 +25,9 @@ pub struct App {
 
     #[serde(skip)]
     params_view: ParamsEditorView,
+
+    #[serde(skip)]
+    body_reader_view: BodyReaderView,
 }
 
 impl Default for App {
@@ -66,6 +69,7 @@ impl Default for App {
             active_request_id: request_id,
             request_tree: request_tree,
             params_view: Default::default(),
+            body_reader_view: Default::default(),
         }
     }
 }
@@ -216,34 +220,17 @@ impl App {
             });
     }
 
-    fn get_response(
-        state: &mut RequestState,
-    ) -> Option<(String, Vec<(String, String)>, u16, String)> {
-        let response = &*state.response.lock().unwrap();
-        // let response = &*response;
-        let mut result = None;
-        if let Some(resp) = response {
-            let body = serde_json::from_slice::<serde_json::Value>(&resp.body);
-            if let Ok(body) = body {
-                let prettified = serde_json::to_string_pretty(&body).unwrap();
-                result = Some((
-                    prettified,
-                    resp.headers.clone(),
-                    resp.status,
-                    resp.status_text.clone(),
-                ))
-            }
-        }
-        result
-    }
-
     fn request_ui(&mut self, request_id: RequestId, ui: &mut egui::Ui, ctx: &egui::Context) {
         let mut state = self.state.iter_mut().find(|el| el.0 == request_id);
 
         if let Some((_, state)) = state {
             // let response = Self::get_response(state);
             header::show(ui, state);
-            let mut tiles_behavior = TreeBehavior::default_with_state(state, &mut self.params_view);
+            let mut tiles_behavior = TreeBehavior::default_with_state(
+                state,
+                &mut self.params_view,
+                &mut self.body_reader_view,
+            );
             self.request_tree.ui(&mut tiles_behavior, ui);
 
             if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
