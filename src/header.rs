@@ -1,4 +1,4 @@
-use egui::{FontId, FontSelection, Layout, Margin, TextStyle, Vec2};
+use egui::{FontId, FontSelection, Layout, Margin, Vec2};
 
 use crate::{
     core::RequestState,

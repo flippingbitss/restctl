@@ -62,31 +62,13 @@ impl Pane {
         ui: &mut egui::Ui,
     ) -> egui_tiles::UiResponse {
         let color = egui::epaint::Hsva::new(0.103 * self.nr as f32, 0.5, 0.5, 1.0);
-        //
-        // ui.painter().rect_stroke(
-        //     ui.max_rect(),
-        //     0.0,
-        //     ui.style().visuals.window_stroke(),
-        //     egui::StrokeKind::Inside,
-        // );
-        //
-        let avail_width = ui.available_width();
-        //
-        // egui::Frame::new()
-        //     .fill(ui.style().visuals.widgets.open.weak_bg_fill)
-        //     .inner_margin(Margin::same(4))
-        //     .show(ui, |ui| {
-        //         ui.set_min_width(avail_width);
-        //         ui.heading(self.kind.to_string());
-        //     });
-        //
+
         let dragged = ui
             .allocate_rect(ui.min_rect(), egui::Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::Grab)
             .dragged();
 
         egui::Frame::new()
-            // .fill(Color32::PURPLE)
             .inner_margin(Margin::same(16))
             .show(ui, |ui| {
                 match self.kind {
@@ -131,13 +113,6 @@ impl Pane {
                 ui.allocate_rect(ui.max_rect(), Sense::empty());
             });
 
-        // egui::Frame::new()
-        //     .stroke(ui.style().visuals.window_stroke())
-        //     .show(ui, |ui| {
-        //         ui.heading(format!("Heading: {}", self.nr));
-        //     });
-        //
-        // ui.painter().rect_stroke(ui.max_rect(), 0.0, color);
         ui.heading(format!("{}", self.nr));
         if dragged {
             egui_tiles::UiResponse::DragStarted
@@ -156,18 +131,7 @@ pub struct TreeBehavior<'a> {
     // TODO: move to request view
     pub params_view: &'a mut ParamsEditorView,
 }
-//
-// impl<'a> Default for TreeBehavior<'a> {
-//     fn default() -> Self {
-//         Self {
-//             simplification_options: Default::default(),
-//             tab_bar_height: 24.0,
-//             gap_width: 2.0,
-//             add_child_to: None,
-//         }
-//     }
-// }
-//
+
 impl<'a> TreeBehavior<'a> {
     pub fn default_with_state(
         state: &'a mut RequestState,
@@ -578,37 +542,3 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
 
     fn on_edit(&mut self, _edit_action: egui_tiles::EditAction) {}
 }
-//
-// impl<'a> Default for TabsView<'a> {
-//     fn default() -> Self {
-//         let mut next_view_nr = 0;
-//         let mut gen_view = || {
-//             let view = Pane {
-//                 nr: next_view_nr,
-//                 kind: PaneKind::QueryParams,
-//             };
-//             next_view_nr += 1;
-//             view
-//         };
-//
-//         let mut tiles = egui_tiles::Tiles::default();
-//
-//         let mut tabs = vec![];
-//         tabs.push({
-//             let cells = (0..3).map(|_| tiles.insert_pane(gen_view())).collect();
-//             tiles.insert_grid_tile(cells)
-//         });
-//         tabs.push(tiles.insert_pane(gen_view()));
-//
-//         let root = tiles.insert_tab_tile(tabs);
-//
-//         let tree = egui_tiles::Tree::new("my_tree", root, tiles);
-//
-//         debug!("Tree: {:?}", tree);
-//
-//         Self {
-//             tree,
-//             behavior: TreeBehavior::default_with_state(&mut AppState::default()),
-//         }
-//     }
-// }

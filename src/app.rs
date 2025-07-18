@@ -1,17 +1,7 @@
-use std::{
-    collections::HashMap,
-    hash::{RandomState, SipHasher},
-    sync::atomic::AtomicUsize,
-};
-
-use egui::{Frame, RichText, TextWrapMode, ThemePreference};
-use egui_tiles::{Container, SimplificationOptions, Tree};
+use egui::{Frame, TextWrapMode, ThemePreference};
 
 use crate::{
-    components::{
-        navigation_bar_view::NavBarTabsBehavior, params_editor_view::ParamsEditorView,
-        params_reader_view,
-    },
+    components::params_editor_view::ParamsEditorView,
     core::{RequestId, RequestState},
     header,
     tiles::{Pane, PaneKind, TreeBehavior},
@@ -71,21 +61,10 @@ impl Default for App {
         let mut state = Vec::with_capacity(10);
         let request_id = RequestId::next();
         state.push((request_id, RequestState::default()));
-        //
-        // let mut navigation_tiles = egui_tiles::Tiles::default();
-        // let mut navigation_tabs = Vec::new();
-        // for request in state.keys().cloned() {
-        //     navigation_tabs.push(navigation_tiles.insert_pane(request));
-        // }
-        // let root = navigation_tiles.insert_tab_tile(navigation_tabs);
-        //
-        // let navigation_tree = egui_tiles::Tree::new("navigation_tree", root, navigation_tiles);
-        //
         Self {
             state: state,
             active_request_id: request_id,
             request_tree: request_tree,
-            // navigation_tree: navigation_tree,
             params_view: Default::default(),
         }
     }
@@ -134,13 +113,6 @@ impl eframe::App for App {
 }
 
 impl App {
-    // fn request_state(&mut self) -> &mut AppState {
-    //     self.states
-    //         .get_mut(&StateId::Request)
-    //         .map(|s| s.as_ref())
-    //         .expect("no request state")
-    // }
-
     fn ui(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(false)
@@ -152,9 +124,6 @@ impl App {
 
         egui::SidePanel::left("tree").show(ctx, |ui| {
             ui.heading("Debug tools");
-            // tiles_behavior.ui(ui);
-
-            ui.separator();
 
             ui.collapsing("Tree", |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -235,44 +204,14 @@ impl App {
                 if self.state.is_empty() {
                     self.empty_ui(ui, ctx);
                 } else {
-                    if self.state.iter().all(|el| el.0 != self.active_request_id) {
+                    if !self
+                        .state
+                        .iter()
+                        .any(|(id, _)| *id == self.active_request_id)
+                    {
                         self.active_request_id = self.state.first().unwrap().0;
                     }
-
-                    // if let Some(root) = self.navigation_tree.root {
-                    //     let child = self.navigation_tree.tiles.insert_pane(next);
-                    //     log::info!("root exists");
-                    //     if let Some(parent) = self.navigation_tree.tiles.get_mut(root) {
-                    //         match parent {
-                    //             egui_tiles::Tile::Container(parent) => {
-                    //                 log::info!("found a parent container");
-                    //                 parent.add_child(child);
-                    //             }
-                    //             _ => {
-                    //                 log::info!("not a container");
-                    //             }
-                    //         }
-                    //     }
-                    //
-                    //     self.navigation_tree.tiles.insert_tab_tile(vec![child]);
-                    // }
-                    // let root_id = self.navigation_tree.root.unwrap();
-                    //
-                    // let child = self.navigation_tree.tiles.insert_pane(next);
-                    // let root = self.navigation_tree.tiles.get_mut(root_id).unwrap();
-
-                    // let (tileId, tile) = self.navigation_tree.tiles.iter_mut().nth(0).unwrap();
-                    // let mut nav_behavior = NavBarTabsBehavior {
-                    //     simplification_options: SimplificationOptions {
-                    //         all_panes_must_have_tabs: true,
-                    //         ..Default::default()
-                    //     },
-                    // };
-                    //
                     self.request_ui(self.active_request_id, ui, ctx);
-                    //
-                    // self.navigation_tree.ui(&mut nav_behavior, ui);
-                    // self.top_ui(ctx);
                 }
             });
     }
@@ -299,9 +238,6 @@ impl App {
     }
 
     fn request_ui(&mut self, request_id: RequestId, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let callback = || {
-            self.state.push((RequestId::next(), Default::default()));
-        };
         let mut state = self.state.iter_mut().find(|el| el.0 == request_id);
 
         if let Some((_, state)) = state {

@@ -1,8 +1,5 @@
 use eframe::CreationContext;
-use egui::{
-    epaint::text::{FontInsert, InsertFontFamily},
-    Vec2,
-};
+use egui::epaint::text::{FontInsert, InsertFontFamily};
 // MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].codepoints
 // MaterialSymbolsOutlined[FILL,GRAD,opsz,wght].ttf
 // MaterialSymbolsRounded[FILL,GRAD,opsz,wght].codepoints
