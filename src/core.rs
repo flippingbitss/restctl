@@ -4,7 +4,10 @@ pub trait View {
 
 use std::sync::{Arc, Mutex, atomic::AtomicUsize};
 
-use crate::http::{HttpMethod, HttpResponse, Param};
+use crate::{
+    auth::{RequestAuth, RequestAuthType},
+    http::{HttpMethod, HttpResponse, Param},
+};
 
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
@@ -28,27 +31,8 @@ pub struct RequestState {
     pub query: Vec<Param>,
     pub headers: Vec<Param>,
     pub body: String,
+    pub auth: RequestAuth,
     pub response: Arc<Mutex<Option<HttpResponse>>>,
-}
-
-impl RequestState {
-    pub fn new(
-        url: String,
-        method: HttpMethod,
-        query: Vec<Param>,
-        headers: Vec<Param>,
-        body: String,
-        response: Arc<Mutex<Option<HttpResponse>>>,
-    ) -> Self {
-        Self {
-            url,
-            method,
-            query,
-            headers,
-            body,
-            response,
-        }
-    }
 }
 
 impl Default for RequestState {
@@ -77,6 +61,7 @@ impl Default for RequestState {
                 },
             ],
             headers: vec![Default::default()],
+            auth: Default::default(),
             response: Arc::new(Mutex::new(None)),
         }
     }

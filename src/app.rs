@@ -49,10 +49,11 @@ impl Default for App {
 
         let mut response_tabs = vec![];
         response_tabs.push({
-            let left = tiles.insert_pane(gen_view(PaneKind::ResponseHeaders));
+            let left = tiles.insert_pane(gen_view(PaneKind::ResponseStats));
+            let middle = tiles.insert_pane(gen_view(PaneKind::ResponseHeaders));
             let right = tiles.insert_pane(gen_view(PaneKind::ResponseBody));
 
-            tiles.insert_horizontal_tile(vec![left, right])
+            tiles.insert_horizontal_tile(vec![left, middle, right])
         });
 
         let request_container = tiles.insert_tab_tile(request_tabs);

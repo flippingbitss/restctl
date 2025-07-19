@@ -6,12 +6,13 @@ use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 
 use crate::{
     components::{
-        body_editor_view,
+        auth_editor_view, body_editor_view,
         body_reader_view::{self, BodyReaderView},
         params_editor_view::ParamsEditorView,
-        params_reader_view,
+        params_reader_view, response_stats_view,
     },
     core::RequestState,
+    http::HttpResponse,
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -37,6 +38,7 @@ pub enum PaneKind {
     // TODO: (temp) move to its own parent enum
     ResponseBody,
     ResponseHeaders,
+    ResponseStats,
 }
 
 impl fmt::Display for PaneKind {
@@ -49,6 +51,7 @@ impl fmt::Display for PaneKind {
             PaneKind::Script => write!(f, "Script"),
             PaneKind::ResponseBody => write!(f, "Response Body"),
             PaneKind::ResponseHeaders => write!(f, "Response Headers"),
+            PaneKind::ResponseStats => write!(f, "Response Stats"),
         }
     }
 }
@@ -57,6 +60,7 @@ impl Pane {
     pub fn from_values(nr: usize, kind: PaneKind) -> Self {
         Pane { nr, kind }
     }
+
     pub fn pane_ui(
         &mut self,
         state: &mut RequestState,
@@ -102,6 +106,18 @@ impl Pane {
                                 ui,
                                 &response.headers,
                             );
+                        } else {
+                            ui.label("No response yet");
+                        }
+                    }
+                    PaneKind::Auth => {
+                        auth_editor_view::show(ui, &mut state.auth);
+                    }
+                    PaneKind::ResponseStats => {
+                        let guard = state.response.lock().unwrap();
+                        let response = guard.deref();
+                        if let Some(response) = response {
+                            response_stats_view::show(Id::new("response_stats"), ui, &response)
                         } else {
                             ui.label("No response yet");
                         }

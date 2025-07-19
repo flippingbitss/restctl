@@ -3,6 +3,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+pub const HEADER_AUTHORIZATION: &'static str = "Authorization";
+pub const HEADER_CONTENT_TYPE: &'static str = "Content-Type";
+
 use crate::core::RequestState;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -84,6 +87,27 @@ pub struct HttpRequest {
     pub body: Option<Vec<u8>>,
 }
 
+impl HttpRequest {
+    pub fn set_auth_header(&mut self, value: impl Into<String>) {
+        self.set_header(HEADER_AUTHORIZATION, value);
+    }
+
+    pub fn set_content_type(&mut self, value: impl Into<String>) {
+        self.set_header(HEADER_CONTENT_TYPE, value);
+    }
+
+    pub fn set_header<S: Into<String>>(&mut self, key: &str, value: S) {
+        let header = self.headers.iter_mut().find(|(k, _)| k == key);
+        if let Some(found) = header {
+            found.1 = value.into();
+        } else {
+            self.headers.push((key.into(), value.into()));
+        }
+    }
+
+    pub fn set_query_param<S: Into<String>>(&mut self, key: &str, value: S) {}
+}
+
 #[derive(Default, Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct HttpResponse {
     pub headers: Vec<(String, String)>,
@@ -109,13 +133,12 @@ pub fn execute(
         let method = input.method.to_string();
         let url = input.url;
         let body = input.body.unwrap_or_else(|| Vec::new());
-        let headers = ehttp::Headers {
-            headers: input.headers,
-        };
+
+        let mut headers = input.headers;
+        headers.push(("Accept".to_owned(), "*/*".to_owned()));
+
+        let headers = ehttp::Headers { headers };
         match input.method {
-            HttpMethod::Get => ehttp::Request::get(url),
-            HttpMethod::Post => ehttp::Request::post(url, body),
-            HttpMethod::Head => ehttp::Request::head(url),
             _ => ehttp::Request {
                 method,
                 url,
@@ -170,7 +193,7 @@ pub fn execute_with_state(state: &mut RequestState) {
             .collect()
     };
 
-    let input = HttpRequest {
+    let mut request = HttpRequest {
         url: state.url.clone(),
         method: state.method,
         query: filter_params(&state.query),
@@ -178,9 +201,11 @@ pub fn execute_with_state(state: &mut RequestState) {
         body: Some(state.body.as_bytes().into()),
     };
 
-    log::info!("{:?}", input);
+    state.auth.apply(&mut request);
+
+    log::info!("{:?}", request);
     let response_store = state.response.clone();
-    execute(input, move |result| match result {
+    execute(request, move |result| match result {
         Ok(resp) => {
             *response_store.lock().unwrap() = Some(resp);
         }
