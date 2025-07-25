@@ -5,8 +5,33 @@ use crate::auth::RequestAuth;
 use crate::auth::SigV4Params;
 
 pub fn show(ui: &mut egui::Ui, auth: &mut RequestAuth) {
-    #[rustfmt::skip]
-    egui::ComboBox::from_label("Select Auth")
+    ui.horizontal(|ui| {
+        ui.label("Select Auth type: ");
+        show_selection_combobox(ui, auth);
+    });
+
+    ui.add_space(16.0);
+
+    let item_spacing = ui.style().spacing.item_spacing + egui::Vec2::new(0.0, 6.0);
+    egui::Grid::new("auth_params_editor")
+        .num_columns(2)
+        .min_col_width(100.0)
+        .max_col_width(200.0)
+        .spacing(item_spacing)
+        .show(ui, |ui| match auth {
+            RequestAuth::None => {}
+            RequestAuth::BasicAuth { username, password } => {
+                show_basic_auth(ui, username, password)
+            }
+            RequestAuth::Bearer { token } => show_bearer(ui, token),
+            RequestAuth::ApiKey(params) => show_api_key(ui, params),
+            RequestAuth::AwsSigV4(params) => show_sigv4(ui, params),
+        });
+}
+
+#[rustfmt::skip]
+fn show_selection_combobox(ui: &mut egui::Ui, auth: &mut RequestAuth) {
+    egui::ComboBox::from_id_salt("auth_selection")
         .selected_text(auth.to_string())
         .show_ui(ui, |ui| {
             if ui.selectable_label(matches!(auth, RequestAuth::None { .. }), "No Auth").clicked() {
@@ -25,14 +50,6 @@ pub fn show(ui: &mut egui::Ui, auth: &mut RequestAuth) {
                 *auth = RequestAuth::AwsSigV4(Default::default());
             }
         });
-
-    match auth {
-        RequestAuth::None => {}
-        RequestAuth::BasicAuth { username, password } => show_basic_auth(ui, username, password),
-        RequestAuth::Bearer { token } => show_bearer(ui, token),
-        RequestAuth::ApiKey(params) => show_api_key(ui, params),
-        RequestAuth::AwsSigV4(params) => show_sigv4(ui, params),
-    }
 }
 
 fn show_sigv4(ui: &mut egui::Ui, params: &mut SigV4Params) {
@@ -48,14 +65,11 @@ fn show_bearer(ui: &mut egui::Ui, token: &str) {
 }
 
 fn show_basic_auth(ui: &mut egui::Ui, username: &mut String, password: &mut String) {
-    ui.horizontal(|ui| {
-        ui.label("Username");
-        ui.add_space(16.0);
-        ui.add(egui::TextEdit::singleline(username).font(TextStyle::Monospace));
-    });
-    ui.horizontal(|ui| {
-        ui.label("Password");
-        ui.add_space(16.0);
-        ui.add(egui::TextEdit::singleline(password).font(TextStyle::Monospace));
-    });
+    ui.label("Username");
+    ui.add(egui::TextEdit::singleline(username).font(TextStyle::Monospace));
+    ui.end_row();
+
+    ui.label("Password");
+    ui.add(egui::TextEdit::singleline(password).font(TextStyle::Monospace));
+    ui.end_row();
 }

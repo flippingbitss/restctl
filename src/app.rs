@@ -41,10 +41,11 @@ impl Default for App {
         let mut tiles = egui_tiles::Tiles::default();
         let mut request_tabs = vec![];
         request_tabs.push({
-            let left = tiles.insert_pane(gen_view(PaneKind::QueryParams));
-            let middle = tiles.insert_pane(gen_view(PaneKind::Headers));
-            let right = tiles.insert_pane(gen_view(PaneKind::Body));
-            tiles.insert_horizontal_tile(vec![left, middle, right])
+            let auth = tiles.insert_pane(gen_view(PaneKind::Auth));
+            let params = tiles.insert_pane(gen_view(PaneKind::QueryParams));
+            let headers = tiles.insert_pane(gen_view(PaneKind::Headers));
+            let body = tiles.insert_pane(gen_view(PaneKind::Body));
+            tiles.insert_horizontal_tile(vec![auth, params, headers, body])
         });
 
         let mut response_tabs = vec![];
