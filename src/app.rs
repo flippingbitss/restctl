@@ -1,108 +1,129 @@
-use egui::{Frame, TextWrapMode, ThemePreference};
+const SAMPLE_JSON: &'static str = r#"{"web-app": {
+  "servlet": [   
+    {
+      "servlet-name": "cofaxCDS",
+      "servlet-class": "org.cofax.cds.CDSServlet",
+      "init-param": {
+        "configGlossary:installationAt": "Philadelphia, PA",
+        "configGlossary:adminEmail": "ksm@pobox.com",
+        "configGlossary:poweredBy": "Cofax",
+        "configGlossary:poweredByIcon": "/images/cofax.gif",
+        "configGlossary:staticPath": "/content/static",
+        "templateProcessorClass": "org.cofax.WysiwygTemplate",
+        "templateLoaderClass": "org.cofax.FilesTemplateLoader",
+        "templatePath": "templates",
+        "templateOverridePath": "",
+        "defaultListTemplate": "listTemplate.htm",
+        "defaultFileTemplate": "articleTemplate.htm",
+        "useJSP": false,
+        "jspListTemplate": "listTemplate.jsp",
+        "jspFileTemplate": "articleTemplate.jsp",
+        "cachePackageTagsTrack": 200,
+        "cachePackageTagsStore": 200,
+        "cachePackageTagsRefresh": 60,
+        "cacheTemplatesTrack": 100,
+        "cacheTemplatesStore": 50,
+        "cacheTemplatesRefresh": 15,
+        "cachePagesTrack": 200,
+        "cachePagesStore": 100,
+        "cachePagesRefresh": 10,
+        "cachePagesDirtyRead": 10,
+        "searchEngineListTemplate": "forSearchEnginesList.htm",
+        "searchEngineFileTemplate": "forSearchEngines.htm",
+        "searchEngineRobotsDb": "WEB-INF/robots.db",
+        "useDataStore": true,
+        "dataStoreClass": "org.cofax.SqlDataStore",
+        "redirectionClass": "org.cofax.SqlRedirection",
+        "dataStoreName": "cofax",
+        "dataStoreDriver": "com.microsoft.jdbc.sqlserver.SQLServerDriver",
+        "dataStoreUrl": "jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon",
+        "dataStoreUser": "sa",
+        "dataStorePassword": "dataStoreTestQuery",
+        "dataStoreTestQuery": "SET NOCOUNT ON;select test='test';",
+        "dataStoreLogFile": "/usr/local/tomcat/logs/datastore.log",
+        "dataStoreInitConns": 10,
+        "dataStoreMaxConns": 100,
+        "dataStoreConnUsageLimit": 100,
+        "dataStoreLogLevel": "debug",
+        "maxUrlLength": 500}},
+    {
+      "servlet-name": "cofaxEmail",
+      "servlet-class": "org.cofax.cds.EmailServlet",
+      "init-param": {
+      "mailHost": "mail1",
+      "mailHostOverride": "mail2"}},
+    {
+      "servlet-name": "cofaxAdmin",
+      "servlet-class": "org.cofax.cds.AdminServlet"},
+ 
+    {
+      "servlet-name": "fileServlet",
+      "servlet-class": "org.cofax.cds.FileServlet"},
+    {
+      "servlet-name": "cofaxTools",
+      "servlet-class": "org.cofax.cms.CofaxToolsServlet",
+      "init-param": {
+        "templatePath": "toolstemplates/",
+        "log": 1,
+        "logLocation": "/usr/local/tomcat/logs/CofaxTools.log",
+        "logMaxSize": "",
+        "dataLog": 1,
+        "dataLogLocation": "/usr/local/tomcat/logs/dataLog.log",
+        "dataLogMaxSize": "",
+        "removePageCache": "/content/admin/remove?cache=pages&id=",
+        "removeTemplateCache": "/content/admin/remove?cache=templates&id=",
+        "fileTransferFolder": "/usr/local/tomcat/webapps/content/fileTransferFolder",
+        "lookInContext": 1,
+        "adminGroupID": 4,
+        "betaServer": true}}],
+  "servlet-mapping": {
+    "cofaxCDS": "/",
+    "cofaxEmail": "/cofaxutil/aemail/*",
+    "cofaxAdmin": "/admin/*",
+    "fileServlet": "/static/*",
+    "cofaxTools": "/tools/*"},
+ 
+  "taglib": {
+    "taglib-uri": "cofax.tld",
+    "taglib-location": "/WEB-INF/tlds/cofax.tld"}}}"#;
+
+use egui::{Frame, ThemePreference, util::History};
+use ropey::Rope;
 
 use crate::{
-    components::{body_reader_view::BodyReaderView, params_editor_view::ParamsEditorView},
-    core::{RequestId, RequestState},
-    header,
-    tiles::{Pane, PaneKind, TreeBehavior},
+    code::{self, text_buffer::RopeBuffer},
+    text_edit,
 };
-
-#[derive(Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-enum StateId {
-    Request,
-}
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    state: Vec<(RequestId, RequestState)>,
+    view: CodeEditorView,
 
-    active_request_id: RequestId,
+    #[serde[skip]]
+    source: RopeBuffer,
 
-    // navigation_tree: egui_tiles::Tree<RequestId>,
-    #[serde(skip)]
-    request_tree: egui_tiles::Tree<Pane>,
-
-    #[serde(skip)]
-    params_view: ParamsEditorView,
-
-    #[serde(skip)]
-    body_reader_view: BodyReaderView,
+    frame_history: History<f32>,
+    source_text_edit: String,
 }
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct CodeEditorView(usize);
 
 impl Default for App {
     fn default() -> Self {
-        let mut next_view_nr = 1;
-        let mut gen_view = |kind: PaneKind| {
-            let view = Pane::from_values(next_view_nr, kind);
-            next_view_nr += 1;
-            view
-        };
-        let mut tiles = egui_tiles::Tiles::default();
-        let mut request_tabs = vec![];
-        request_tabs.push({
-            let auth = tiles.insert_pane(gen_view(PaneKind::Auth));
-            let params = tiles.insert_pane(gen_view(PaneKind::QueryParams));
-            let headers = tiles.insert_pane(gen_view(PaneKind::Headers));
-            let body = tiles.insert_pane(gen_view(PaneKind::Body));
-            tiles.insert_horizontal_tile(vec![auth, params, headers, body])
-        });
-
-        let mut response_tabs = vec![];
-        response_tabs.push({
-            let left = tiles.insert_pane(gen_view(PaneKind::ResponseStats));
-            let middle = tiles.insert_pane(gen_view(PaneKind::ResponseHeaders));
-            let right = tiles.insert_pane(gen_view(PaneKind::ResponseBody));
-
-            tiles.insert_horizontal_tile(vec![left, middle, right])
-        });
-
-        let request_container = tiles.insert_tab_tile(request_tabs);
-        let response_container = tiles.insert_tab_tile(response_tabs);
-        let root = tiles.insert_vertical_tile(vec![request_container, response_container]);
-
-        let request_tree = egui_tiles::Tree::new("request_tree", root, tiles);
-
-        let mut state = Vec::with_capacity(10);
-        let request_id = RequestId::next();
-        state.push((request_id, RequestState::default()));
         Self {
-            state: state,
-            active_request_id: request_id,
-            request_tree: request_tree,
-            params_view: Default::default(),
-            body_reader_view: Default::default(),
+            source: RopeBuffer { rope: Rope::from_str(SAMPLE_JSON) },
+            view: CodeEditorView::default(),
+            source_text_edit: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris vehicula pretium ligula bibendum varius. Nulla diam elit, dictum vitae ultricies quis, pretium non nulla. Integer eget nulla et felis vehicula faucibus vitae eget eros. Nam diam magna, ullamcorper a arcu nec, lobortis vulputate justo. Quisque sed congue lacus. Fusce ullamcorper porttitor aliquam. Donec ultrices scelerisque ligula ut auctor. Maecenas sit amet pharetra urna, at dictum urna. Fusce vel tortor ut purus pellentesque gravida sit amet malesuada urna. Suspendisse id mi eu risus vestibulum feugiat at in ante. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Etiam vitae tincidunt nulla. Aenean eu quam neque. Cras enim sem, viverra sit amet tortor sit amet, aliquet pellentesque nibh.".to_owned(),
+            frame_history: History::new(5..20, 2.0),
         }
     }
 }
 
 impl App {
-    /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // let mut style = cc.egui_ctx.style();
-        // cc.egui_ctx.style_mut(|style| {
-        // style.spacing.button_padding = Vec2::new(10.0, 6.0);
-        // });
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        // if let Some(storage) = cc.storage {
-        //     return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-        // }
-
+    pub fn new(_: &eframe::CreationContext<'_>) -> Self {
         Default::default()
-    }
-
-    fn empty_ui(&mut self, ui: &mut egui::Ui, _: &egui::Context) {
-        ui.horizontal(|ui| {
-            ui.label("No requests yet. ");
-            if ui.button("Create One").clicked() {
-                self.state
-                    .push((RequestId::next(), RequestState::default()));
-            }
-        });
     }
 }
 
@@ -112,14 +133,20 @@ impl eframe::App for App {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.set_theme(ThemePreference::Dark);
-        self.ui(ctx);
+        let previous_frame_time = frame.info().cpu_usage.unwrap_or_default();
+        if let Some(latest) = self.frame_history.latest_mut() {
+            *latest = previous_frame_time; // rewrite history now that we know
+        }
+        let now = ctx.input(|i| i.time);
+        self.frame_history.add(now, previous_frame_time);
+        self.ui(ctx, frame);
     }
 }
 
 impl App {
-    fn ui(&mut self, ctx: &egui::Context) {
+    fn ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::TopBottomPanel::bottom("bottom_panel")
             .resizable(false)
             .exact_height(32.0)
@@ -130,126 +157,39 @@ impl App {
 
         egui::SidePanel::left("tree").show(ctx, |ui| {
             ui.heading("Debug tools");
-
-            ui.collapsing("Tree", |ui| {
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                let tree_debug = format!("{:#?}", self.request_tree);
-                ui.monospace(&tree_debug);
-            });
-
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("Open Requests ({})", self.state.len())).size(16.0),
-                );
-
-                if ui.button("New Request").clicked() {
-                    self.state.push((RequestId::next(), Default::default()));
-                }
-            });
-            // ui.add(egui::TextEdit::singleline(text).hint_text("Search Requests via URL"));
-            ui.separator();
-
-            let row_height = ui.text_style_height(&egui::TextStyle::Body);
-            ui.scope(|ui| {
-                ui.style_mut().wrap_mode = Some(TextWrapMode::Truncate);
-                egui::ScrollArea::vertical().show_rows(
-                    ui,
-                    row_height,
-                    self.state.len(),
-                    |ui, range| {
-                        for (request_id, state) in self.state.iter() {
-                            let url = if state.url.is_empty() {
-                                "<empty>".to_owned()
-                            } else {
-                                state.url.clone()
-                            };
-                            let label = format!("{}: {} {}", request_id.0, state.method, url);
-
-                            let width = ui.available_width();
-                            if ui
-                                .selectable_label(self.active_request_id == *request_id, label)
-                                .clicked()
-                            {
-                                self.active_request_id = *request_id;
-                            }
-                        }
-                    },
-                )
-            });
-
-            ui.allocate_space(ui.available_size());
-            // let area = egui::containers::scroll_area::ScrollArea::vertical();
-            // area.show(ui, |ui| {
-            //     ui.horizontal_wrapped(|ui| {
-            //         let code_points = include_str!(
-            //             "../assets/fonts/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].codepoints"
-            //         );
-            //         for line in code_points.lines() {
-            //             let (label, code) = line.split_once(" ").unwrap();
-            //             let value = u32::from_str_radix(code, 16).unwrap();
-            //             let ch = char::from_u32(value).unwrap();
-            //             ui.label(format!("{}", ch));
-            //         }
-            //     });
-            // });
-        });
-
-        egui::SidePanel::right("side_panel_right").show(ctx, |ui| {
-            ui.heading("Right Panel");
-            ui.allocate_space(ui.available_size());
+            ui.label("CPU Usage:");
+            ui.label(format!(
+                "{:.2} ms / frame",
+                1e3 * self.frame_history.average().unwrap_or_default()
+            ));
         });
 
         egui::CentralPanel::default()
             .frame(
                 Frame::new()
-                    .inner_margin(0)
+                    .inner_margin(10)
                     .fill(ctx.style().visuals.panel_fill),
             )
             .show(ctx, |ui| {
-                if self.state.is_empty() {
-                    self.empty_ui(ui, ctx);
-                } else {
-                    if !self
-                        .state
-                        .iter()
-                        .any(|(id, _)| *id == self.active_request_id)
-                    {
-                        self.active_request_id = self.state.first().unwrap().0;
-                    }
-                    self.request_ui(self.active_request_id, ui, ctx);
-                }
+                ui.heading("Central Panel");
+
+                let widget = text_edit::TextEdit::multiline(&mut self.source_text_edit)
+                    .code_editor()
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(5)
+                    .char_limit(200)
+                    .frame(false)
+                    .hint_text("Enter Code");
+                ui.add(widget);
+
+                ui.separator();
+                // if (self.source.ends_with("aaaaa")) {
+                //     self.source.truncate(self.source.len() - "aaaaa".len());
+                // } else {
+                //     self.source += "a";
+                // }
+                let code_widget = code::editor::TextEdit::new(&mut self.source);
+                code_widget.show(ui);
             });
-    }
-
-    fn request_ui(&mut self, request_id: RequestId, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let mut state = self.state.iter_mut().find(|el| el.0 == request_id);
-
-        if let Some((_, state)) = state {
-            // let response = Self::get_response(state);
-            header::show(ui, state);
-            let mut tiles_behavior = TreeBehavior::default_with_state(
-                state,
-                &mut self.params_view,
-                &mut self.body_reader_view,
-            );
-            self.request_tree.ui(&mut tiles_behavior, ui);
-
-            if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
-                let pane_id = self
-                    .request_tree
-                    .tiles
-                    .insert_pane(Pane::from_values(101, pane_kind));
-
-                let parent = self.request_tree.tiles.get_mut(tile_id).unwrap();
-
-                match parent {
-                    egui_tiles::Tile::Container(container) => {
-                        container.add_child(pane_id);
-                    }
-                    _ => {}
-                }
-            }
-        };
     }
 }
