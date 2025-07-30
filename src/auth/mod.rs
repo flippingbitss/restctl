@@ -1,4 +1,4 @@
-mod sigv4;
+pub(crate) mod sigv4;
 
 use std::str::FromStr;
 

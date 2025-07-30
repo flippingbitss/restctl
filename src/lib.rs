@@ -1,5 +1,6 @@
 #![warn(clippy::all, rust_2018_idioms)]
 mod app;
+mod async_runtime;
 mod auth;
 mod components;
 mod core;
