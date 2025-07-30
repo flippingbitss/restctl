@@ -1,39 +1,9 @@
 use core::fmt;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use http::{HeaderValue, Request};
 
-pub const HEADER_AUTHORIZATION: &'static str = "Authorization";
-pub const HEADER_CONTENT_TYPE: &'static str = "Content-Type";
-
-use crate::core::RequestState;
-
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct Param {
-    pub enabled: bool,
-    pub key: String,
-    pub value: String,
-}
-
-impl Default for Param {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            key: Default::default(),
-            value: Default::default(),
-        }
-    }
-}
-
-impl Param {
-    pub fn enabled(key: String, value: String) -> Self {
-        Param {
-            enabled: true,
-            key,
-            value,
-        }
-    }
-}
+use crate::core::{Param, RequestState};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum HttpMethod {
@@ -78,36 +48,6 @@ impl fmt::Display for HttpMethod {
     }
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct HttpRequest {
-    pub url: String,
-    pub method: HttpMethod,
-    pub query: Vec<(String, String)>,
-    pub headers: Vec<(String, String)>,
-    pub body: Option<Vec<u8>>,
-}
-
-impl HttpRequest {
-    pub fn set_auth_header(&mut self, value: impl Into<String>) {
-        self.set_header(HEADER_AUTHORIZATION, value);
-    }
-
-    pub fn set_content_type(&mut self, value: impl Into<String>) {
-        self.set_header(HEADER_CONTENT_TYPE, value);
-    }
-
-    pub fn set_header<S: Into<String>>(&mut self, key: &str, value: S) {
-        let header = self.headers.iter_mut().find(|(k, _)| k == key);
-        if let Some(found) = header {
-            found.1 = value.into();
-        } else {
-            self.headers.push((key.into(), value.into()));
-        }
-    }
-
-    pub fn set_query_param<S: Into<String>>(&mut self, key: &str, value: S) {}
-}
-
 #[derive(Default, Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct HttpResponse {
     pub headers: Vec<(String, String)>,
@@ -126,28 +66,29 @@ pub enum HttpError {
 }
 
 pub fn execute(
-    input: HttpRequest,
+    input: Request<Vec<u8>>,
     callback: impl 'static + Send + FnOnce(Result<HttpResponse, HttpError>),
 ) {
     let request = {
-        let method = input.method.to_string();
-        let url = input.url;
-        let body = input.body.unwrap_or_else(|| Vec::new());
-
-        let mut headers = input.headers;
-        headers.push(("Accept".to_owned(), "*/*".to_owned()));
-
+        let headers = input
+            .headers()
+            .into_iter()
+            .map(|(name, value)| {
+                (
+                    name.to_string(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect::<Vec<(String, String)>>();
         let headers = ehttp::Headers { headers };
-        match input.method {
-            _ => ehttp::Request {
-                method,
-                url,
-                body,
-                headers,
-                // mode is required on web
-                #[cfg(target_arch = "wasm32")]
-                mode: ehttp::Mode::Cors,
-            },
+        ehttp::Request {
+            method: input.method().to_string(),
+            url: input.uri().to_string(),
+            body: input.into_body(),
+            headers,
+            // mode is required on web
+            #[cfg(target_arch = "wasm32")]
+            mode: ehttp::Mode::Cors,
         }
     };
 
@@ -181,41 +122,5 @@ pub fn execute(
 
         log::info!("{:?}", mapped);
         callback(mapped);
-    });
-}
-
-pub fn execute_with_state(state: &mut RequestState) {
-    let filter_params = |params: &[Param]| {
-        params
-            .iter()
-            .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-            .map(|p| (p.key.clone(), p.value.clone()))
-            .collect()
-    };
-
-    let mut request = HttpRequest {
-        url: state.url.clone(),
-        method: state.method,
-        query: filter_params(&state.query),
-        headers: filter_params(&state.headers),
-        body: Some(state.body.as_bytes().into()),
-    };
-
-    state.auth.apply(&mut request);
-
-    log::info!("{:?}", request);
-    let response_store = state.response.clone();
-    execute(request, move |result| match result {
-        Ok(resp) => {
-            *response_store.lock().unwrap() = Some(resp);
-        }
-        Err(resp) => match resp {
-            HttpError::Unknown(err) => {
-                *response_store.lock().unwrap() = Some(HttpResponse {
-                    body_raw: err,
-                    ..Default::default()
-                })
-            }
-        },
     });
 }

@@ -1,8 +1,8 @@
 mod sigv4;
 
-use base64::Engine;
+use std::str::FromStr;
 
-use crate::http::HttpRequest;
+use base64::Engine;
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 pub enum AuthLocation {
@@ -77,19 +77,30 @@ pub enum RequestAuth {
 }
 
 impl RequestAuth {
-    pub fn apply(&self, request: &mut HttpRequest) {
+    pub fn apply<T>(&self, request: &mut http::Request<T>) {
         match self {
             RequestAuth::BasicAuth { username, password } => {
                 let value = format!("{}:{}", username, password);
                 let encoded_value = base64::engine::general_purpose::STANDARD.encode(value);
-                request.set_auth_header(format!("Basic {encoded_value}"));
+                request.headers_mut().insert(
+                    http::header::AUTHORIZATION,
+                    http::HeaderValue::from_str(&format!("Basic {encoded_value}")).unwrap(),
+                );
             }
             RequestAuth::Bearer { token } => {
-                request.set_auth_header(format!("Bearer {token}"));
+                request.headers_mut().insert(
+                    http::header::AUTHORIZATION,
+                    http::HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
+                );
             }
             RequestAuth::ApiKey(params) => match params.location {
-                AuthLocation::Headers => request.set_header(&params.key, &params.value),
-                AuthLocation::Query => request.set_query_param(&params.key, &params.value),
+                AuthLocation::Headers => {
+                    request.headers_mut().insert(
+                        http::HeaderName::from_str(&params.key).unwrap(),
+                        http::HeaderValue::from_str(&params.value).unwrap(),
+                    );
+                }
+                _ => {} // AuthLocation::Query => request.set_query_param(&params.key, &params.value),
             },
             RequestAuth::AwsSigV4(params) => todo!(),
             RequestAuth::None => {}

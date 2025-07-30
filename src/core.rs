@@ -2,11 +2,16 @@ pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }
 
-use std::sync::{Arc, Mutex, atomic::AtomicUsize};
+use std::{
+    str::FromStr,
+    sync::{Arc, Mutex, atomic::AtomicUsize},
+};
+
+use http::{HeaderValue, Method, Uri, request, uri::PathAndQuery};
 
 use crate::{
     auth::{RequestAuth, RequestAuthType},
-    http::{HttpMethod, HttpResponse, Param},
+    http::{HttpError, HttpMethod, HttpResponse},
 };
 
 static ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -67,10 +72,76 @@ impl Default for RequestState {
     }
 }
 
-struct ContainerId(usize);
-struct ViewId(usize);
+impl RequestState {
+    pub fn execute(&mut self) {
+        let filter_params = |params: &[Param]| {
+            params
+                .iter()
+                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
+                .map(|p| (p.key.clone(), p.value.clone()))
+                .collect::<Vec<(String, String)>>()
+        };
 
-enum Item {
-    Container(ContainerId),
-    View(ViewId),
+        let uri_without_query = &self.url;
+        let query = serde_urlencoded::to_string(filter_params(&self.query)).unwrap_or_default();
+        let full_url = format!("{}?{}", uri_without_query, query);
+
+        let mut request_builder = http::Request::builder()
+            .method(http::Method::from_str(&self.method.to_string()).unwrap_or_default())
+            .uri(http::Uri::from_str(&full_url).unwrap_or_default())
+            // todo move to conditional auto-generated header, keeping for now
+            .header(http::header::ACCEPT, HeaderValue::from_static("*/*"));
+
+        for (header_name, header_value) in filter_params(&self.headers) {
+            request_builder = request_builder.header(header_name, header_value);
+        }
+        let mut request = request_builder
+            .body(self.body.clone().into_bytes())
+            .unwrap();
+
+        self.auth.apply(&mut request);
+
+        log::info!("{:?}", request);
+        let response_store = self.response.clone();
+        crate::http::execute(request, move |result| match result {
+            Ok(resp) => {
+                *response_store.lock().unwrap() = Some(resp);
+            }
+            Err(resp) => match resp {
+                HttpError::Unknown(err) => {
+                    *response_store.lock().unwrap() = Some(HttpResponse {
+                        body_raw: err,
+                        ..Default::default()
+                    })
+                }
+            },
+        });
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct Param {
+    pub enabled: bool,
+    pub key: String,
+    pub value: String,
+}
+
+impl Default for Param {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            key: Default::default(),
+            value: Default::default(),
+        }
+    }
+}
+
+impl Param {
+    pub fn enabled(key: String, value: String) -> Self {
+        Param {
+            enabled: true,
+            key,
+            value,
+        }
+    }
 }

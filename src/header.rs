@@ -36,8 +36,8 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
                     }
 
                     if ui.button("Send").clicked() {
+                        state.execute();
                         // if ui.button("Send").clicked() {
-                        http::execute_with_state(state);
                     }
 
                     ui.add_sized(
