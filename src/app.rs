@@ -127,11 +127,6 @@ impl App {
             .show_separator_line(true)
             .show(ctx, |ui| {
                 ui.heading("bottom");
-
-                if ui.button("test").clicked() {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
-                    let result = rt.block_on(auth::sigv4::call());
-                }
             });
 
         egui::SidePanel::left("tree").show(ctx, |ui| {

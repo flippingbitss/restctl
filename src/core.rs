@@ -2,6 +2,8 @@ pub trait View {
     fn view(&mut self, ui: &mut egui::Ui);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
 use std::{
     str::FromStr,
     sync::{Arc, Mutex, atomic::AtomicUsize},
@@ -99,23 +101,38 @@ impl RequestState {
             .body(self.body.clone().into_bytes())
             .unwrap();
 
-        self.auth.apply(&mut request);
-
-        log::info!("{:?}", request);
+        // Clone request so easier to pass it to another thread
         let response_store = self.response.clone();
-        crate::http::execute(request, move |result| match result {
-            Ok(resp) => {
-                *response_store.lock().unwrap() = Some(resp);
-            }
-            Err(resp) => match resp {
-                HttpError::Unknown(err) => {
-                    *response_store.lock().unwrap() = Some(HttpResponse {
-                        body_raw: err,
-                        ..Default::default()
-                    })
+        let auth = self.auth.clone();
+        let mut request = request.clone();
+
+        let runner = move || {
+            auth.apply(&mut request);
+            log::info!("{:?}", request);
+            // let response_store = response.clone();
+            crate::http::execute(request, move |result| match result {
+                Ok(resp) => {
+                    *response_store.lock().unwrap() = Some(resp);
                 }
-            },
-        });
+                Err(resp) => match resp {
+                    HttpError::Unknown(err) => {
+                        *response_store.lock().unwrap() = Some(HttpResponse {
+                            body_raw: err,
+                            ..Default::default()
+                        })
+                    }
+                },
+            });
+        };
+
+        // thread::spawn doesn't work on web, so we just run the auth
+        // signing on main thread which isn't slow in any means, its just
+        // I didn't wanna do it
+        #[cfg(target_arch = "wasm32")]
+        runner();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        thread::spawn(runner);
     }
 }
 

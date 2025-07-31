@@ -1,6 +1,8 @@
 use egui::TextStyle;
+use egui::vec2;
 
 use crate::auth::ApiKeyParams;
+use crate::auth::AuthLocation;
 use crate::auth::RequestAuth;
 use crate::auth::SigV4Params;
 
@@ -15,7 +17,7 @@ pub fn show(ui: &mut egui::Ui, auth: &mut RequestAuth) {
     let item_spacing = ui.style().spacing.item_spacing + egui::Vec2::new(0.0, 6.0);
     egui::Grid::new("auth_params_editor")
         .num_columns(2)
-        .min_col_width(100.0)
+        .min_col_width(60.0)
         .max_col_width(200.0)
         .spacing(item_spacing)
         .show(ui, |ui| match auth {
@@ -53,15 +55,40 @@ fn show_selection_combobox(ui: &mut egui::Ui, auth: &mut RequestAuth) {
 }
 
 fn show_sigv4(ui: &mut egui::Ui, params: &mut SigV4Params) {
-    todo!()
+    for (label, value) in [
+        ("Access Key", &mut params.access_key),
+        ("Secret Key", &mut params.secret_key),
+        ("Session Token", &mut params.session_token),
+        ("Region", &mut params.region),
+        ("Service", &mut params.service),
+    ] {
+        ui.label(label);
+        ui.add(egui::TextEdit::singleline(value).font(TextStyle::Monospace));
+        ui.end_row();
+    }
 }
-
 fn show_api_key(ui: &mut egui::Ui, params: &mut ApiKeyParams) {
-    todo!()
+    ui.label("Key");
+    ui.add(egui::TextEdit::singleline(&mut params.key).font(TextStyle::Monospace));
+    ui.end_row();
+
+    ui.label("Value");
+    ui.add(egui::TextEdit::singleline(&mut params.value).font(TextStyle::Monospace));
+    ui.end_row();
+
+    ui.end_row();
+    ui.label("Location ");
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut params.location, AuthLocation::Headers, "Headers");
+        ui.selectable_value(&mut params.location, AuthLocation::Query, "Query Params");
+    });
+    ui.end_row();
 }
 
-fn show_bearer(ui: &mut egui::Ui, token: &str) {
-    todo!()
+fn show_bearer(ui: &mut egui::Ui, token: &mut String) {
+    ui.label("Token");
+    ui.add(egui::TextEdit::multiline(token).code_editor());
+    ui.end_row();
 }
 
 fn show_basic_auth(ui: &mut egui::Ui, username: &mut String, password: &mut String) {

@@ -4,30 +4,30 @@ use std::str::FromStr;
 
 use base64::Engine;
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AuthLocation {
     #[default]
     Headers,
     Query,
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ApiKeyParams {
-    key: String,
-    value: String,
-    location: AuthLocation,
+    pub key: String,
+    pub value: String,
+    pub location: AuthLocation,
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SigV4Params {
-    access_key: String,
-    secret_key: String,
-    session_token: String,
-    service: String,
-    region: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub session_token: String,
+    pub service: String,
+    pub region: String,
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub enum RequestAuthType {
     #[default]
     None,
@@ -61,7 +61,7 @@ impl std::fmt::Display for RequestAuth {
     }
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum RequestAuth {
     #[default]
     None,
@@ -77,7 +77,7 @@ pub enum RequestAuth {
 }
 
 impl RequestAuth {
-    pub fn apply<T>(&self, request: &mut http::Request<T>) {
+    pub fn apply(self, request: &mut http::Request<Vec<u8>>) {
         match self {
             RequestAuth::BasicAuth { username, password } => {
                 let value = format!("{}:{}", username, password);
@@ -102,7 +102,12 @@ impl RequestAuth {
                 }
                 _ => {} // AuthLocation::Query => request.set_query_param(&params.key, &params.value),
             },
-            RequestAuth::AwsSigV4(params) => todo!(),
+            RequestAuth::AwsSigV4(params) => match sigv4::apply(request, params) {
+                Ok(_) => {}
+                Err(err) => {
+                    log::error!("failed to sign request {}", err);
+                }
+            },
             RequestAuth::None => {}
         }
     }

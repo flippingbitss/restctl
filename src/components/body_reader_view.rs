@@ -31,11 +31,13 @@ impl BodyReaderView {
             },
         };
 
-        egui_extras::syntax_highlighting::code_view_ui(
-            ui,
-            &CodeTheme::from_style(ui.style()),
-            body_to_view,
-            "json",
-        );
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui_extras::syntax_highlighting::code_view_ui(
+                ui,
+                &CodeTheme::from_style(ui.style()),
+                body_to_view,
+                "json",
+            );
+        });
     }
 }
