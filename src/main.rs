@@ -4,7 +4,18 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    use log::LevelFilter;
+
+    let mut builder = env_logger::Builder::from_default_env(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    builder.filter_level(LevelFilter::Debug);
+    builder.init();
+
+    let tokio_runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let _ = tokio_runtime.enter();
+    let tokio_runtime_handle = tokio_runtime.handle().clone();
+
+    let async_runtime_handle =
+        restctl::async_runtime::AsyncRuntimeHandle::new_native(tokio_runtime_handle);
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -23,7 +34,7 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             restctl::customize_app_styles(cc);
             // cc.egui_ctx.set_theme(egui::Theme::Light);
-            Ok(Box::new(restctl::App::new(cc)))
+            Ok(Box::new(restctl::App::new(cc, async_runtime_handle)))
         }),
     )
 }
@@ -55,9 +66,14 @@ fn main() {
                 canvas,
                 web_options,
                 Box::new(|cc| {
+                    use restctl::async_runtime;
+
                     restctl::customize_app_styles(cc);
                     // cc.egui_ctx.set_theme(egui::Theme::Light);
-                    Ok(Box::new(restctl::App::new(cc)))
+                    Ok(Box::new(restctl::App::new(
+                        cc,
+                        async_runtime::AsyncRuntimeHandle::new_web(),
+                    )))
                 }),
             )
             .await;

@@ -1,5 +1,8 @@
 use core::fmt;
-use std::time::{Duration, Instant};
+use std::{
+    error::Error,
+    time::{Duration, Instant},
+};
 
 use http::{HeaderValue, Request};
 
@@ -63,6 +66,46 @@ pub struct HttpResponse {
 #[derive(Debug)]
 pub enum HttpError {
     Unknown(String),
+}
+
+pub async fn execute_new(input: Request<Vec<u8>>) -> Result<HttpResponse, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let response = client
+        .request(input.method().clone(), input.uri().to_string())
+        .headers(input.headers().clone())
+        .body(input.into_body())
+        .send()
+        .await?;
+
+    let headers = response
+        .headers()
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_str().unwrap().to_string()))
+        .collect::<Vec<(String, String)>>();
+    let status = response.status();
+
+    let body_bytes = &response.bytes().await?;
+    let body_str = std::str::from_utf8(&body_bytes).unwrap_or_default();
+    let parsed = serde_json::from_slice::<serde_json::Value>(&body_bytes);
+    let body_pretty = match parsed {
+        Ok(value) => Some(serde_json::to_string_pretty(&value)?),
+        Err(e) => {
+            log::warn!("failed to parse response body {}", e);
+            None
+        }
+    };
+
+    let response = HttpResponse {
+        headers,
+        ok: status.is_success(),
+        status: status.as_u16(),
+        status_text: status.to_string(),
+        body_raw: body_str.to_string(),
+        body_pretty,
+        duration: Default::default(),
+    };
+
+    Ok(response)
 }
 
 pub fn execute(

@@ -1,11 +1,13 @@
 use egui::{FontId, FontSelection, Layout, Margin, Vec2};
 
 use crate::{
+    app::GlobalContext,
     core::RequestState,
     http::{self, HttpMethod},
+    tasks,
 };
 
-pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
+pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState, global_context: &GlobalContext) {
     // The central panel the region left after adding TopPanel's and SidePanel's
     ui.add_space(10.0);
     ui.horizontal(|ui| {
@@ -25,9 +27,9 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
                 ui.available_size_before_wrap(),
                 Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    ui.allocate_space(egui::Vec2::new(ui.available_width() / 2.0, 1.0));
+                    ui.add_space(10.0);
 
-                    if ui.small_button("Duplicate").clicked() {
+                    if ui.button("\u{e173}").clicked() {
                         // TODO: impl duplicate request,
                         // one of:
                         //      pass in entire request collection
@@ -36,7 +38,7 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState) {
                     }
 
                     if ui.button("Send").clicked() {
-                        state.execute();
+                        tasks::execute(state, &global_context.async_runtime)
                         // if ui.button("Send").clicked() {
                     }
 

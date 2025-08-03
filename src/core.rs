@@ -74,68 +74,6 @@ impl Default for RequestState {
     }
 }
 
-impl RequestState {
-    pub fn execute(&mut self) {
-        let filter_params = |params: &[Param]| {
-            params
-                .iter()
-                .filter(|p| p.enabled && !p.key.is_empty() && !p.value.is_empty())
-                .map(|p| (p.key.clone(), p.value.clone()))
-                .collect::<Vec<(String, String)>>()
-        };
-
-        let uri_without_query = &self.url;
-        let query = serde_urlencoded::to_string(filter_params(&self.query)).unwrap_or_default();
-        let full_url = format!("{}?{}", uri_without_query, query);
-
-        let mut request_builder = http::Request::builder()
-            .method(http::Method::from_str(&self.method.to_string()).unwrap_or_default())
-            .uri(http::Uri::from_str(&full_url).unwrap_or_default())
-            // todo move to conditional auto-generated header, keeping for now
-            .header(http::header::ACCEPT, HeaderValue::from_static("*/*"));
-
-        for (header_name, header_value) in filter_params(&self.headers) {
-            request_builder = request_builder.header(header_name, header_value);
-        }
-        let mut request = request_builder
-            .body(self.body.clone().into_bytes())
-            .unwrap();
-
-        // Clone request so easier to pass it to another thread
-        let response_store = self.response.clone();
-        let auth = self.auth.clone();
-        let mut request = request.clone();
-
-        let runner = move || {
-            auth.apply(&mut request);
-            log::info!("{:?}", request);
-            // let response_store = response.clone();
-            crate::http::execute(request, move |result| match result {
-                Ok(resp) => {
-                    *response_store.lock().unwrap() = Some(resp);
-                }
-                Err(resp) => match resp {
-                    HttpError::Unknown(err) => {
-                        *response_store.lock().unwrap() = Some(HttpResponse {
-                            body_raw: err,
-                            ..Default::default()
-                        })
-                    }
-                },
-            });
-        };
-
-        // thread::spawn doesn't work on web, so we just run the auth
-        // signing on main thread which isn't slow in any means, its just
-        // I didn't wanna do it
-        #[cfg(target_arch = "wasm32")]
-        runner();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        thread::spawn(runner);
-    }
-}
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct Param {
     pub enabled: bool,

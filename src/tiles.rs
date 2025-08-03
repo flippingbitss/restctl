@@ -5,6 +5,7 @@ use egui::{Color32, Id, Margin, Rect, Sense};
 use egui_tiles::{SimplificationOptions, Tile, TileId, Tiles};
 
 use crate::{
+    app::GlobalContext,
     components::{
         auth_editor_view, body_editor_view,
         body_reader_view::{self, BodyReaderView},
@@ -64,6 +65,7 @@ impl Pane {
     pub fn pane_ui(
         &mut self,
         state: &mut RequestState,
+        _: &mut GlobalContext,
         params_view: &mut ParamsEditorView,
         body_reader_view: &mut BodyReaderView,
         ui: &mut egui::Ui,
@@ -142,6 +144,7 @@ pub struct TreeBehavior<'a> {
     pub gap_width: f32,
     pub add_child_to: Option<(egui_tiles::TileId, PaneKind)>,
     pub state: &'a mut RequestState,
+    pub global_context: &'a mut GlobalContext,
     // TODO: move these to request view and move req state under it
     pub params_view: &'a mut ParamsEditorView,
     pub body_reader_view: &'a mut BodyReaderView,
@@ -150,6 +153,7 @@ pub struct TreeBehavior<'a> {
 impl<'a> TreeBehavior<'a> {
     pub fn default_with_state(
         state: &'a mut RequestState,
+        global_context: &'a mut GlobalContext,
         params_view: &'a mut ParamsEditorView,
         body_reader_view: &'a mut BodyReaderView,
     ) -> Self {
@@ -162,6 +166,7 @@ impl<'a> TreeBehavior<'a> {
             gap_width: 2.0,
             add_child_to: None,
             state,
+            global_context,
             params_view,
             body_reader_view,
         }
@@ -212,6 +217,7 @@ impl<'a> egui_tiles::Behavior<Pane> for TreeBehavior<'a> {
     ) -> egui_tiles::UiResponse {
         view.pane_ui(
             &mut self.state,
+            &mut self.global_context,
             &mut self.params_view,
             &mut self.body_reader_view,
             ui,
