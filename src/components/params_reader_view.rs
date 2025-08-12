@@ -17,4 +17,10 @@ pub fn show(id: egui::Id, ui: &mut egui::Ui, values: &[(String, String)]) {
                 }
             }
         });
+
+    ui.add_space(16.0);
+    if ui.button("Copy \u{e173}").clicked() {
+        // TODO: impl copy to clipboard
+        log::info!("copy headers");
+    }
 }

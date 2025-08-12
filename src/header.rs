@@ -37,7 +37,7 @@ pub fn show<'a>(ui: &mut egui::Ui, state: &mut RequestState, global_context: &Gl
                         //      return a typed response
                     }
 
-                    if ui.button("Send").clicked() {
+                    if ui.button("SEND").clicked() {
                         tasks::execute(state, &global_context.async_runtime)
                         // if ui.button("Send").clicked() {
                     }
