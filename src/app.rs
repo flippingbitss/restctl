@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use egui::{Frame, TextWrapMode, Theme, ThemePreference};
+use egui::{Frame, Popup, TextWrapMode, Theme, ThemePreference};
 
-use crate::async_runtime::{self, AsyncRuntimeHandle};
+use crate::{
+    async_runtime::{self, AsyncRuntimeHandle},
+    layout::RequestViewLayout,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::cookies::BasicCookieStore;
@@ -24,7 +27,6 @@ pub struct App {
     state: AppState,
     global_context: GlobalContext,
 }
-
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -35,7 +37,10 @@ pub struct AppState {
 
     // navigation_tree: egui_tiles::Tree<RequestId>,
     #[serde(skip)]
-    request_tree: egui_tiles::Tree<Pane>,
+    layouts: Vec<RequestViewLayout>,
+
+    #[serde(skip)]
+    selected_layout_index: usize,
 
     #[serde(skip)]
     params_view: ParamsEditorView,
@@ -53,36 +58,11 @@ pub struct GlobalContext {
 
 impl Default for AppState {
     fn default() -> Self {
-        let mut next_view_nr = 1;
-        let mut gen_view = |kind: PaneKind| {
-            let view = Pane::from_values(next_view_nr, kind);
-            next_view_nr += 1;
-            view
-        };
-        let mut tiles = egui_tiles::Tiles::default();
-        let mut request_tabs = vec![];
-        request_tabs.push({
-            let auth = tiles.insert_pane(gen_view(PaneKind::Auth));
-            let params = tiles.insert_pane(gen_view(PaneKind::QueryParams));
-            let headers = tiles.insert_pane(gen_view(PaneKind::Headers));
-            let body = tiles.insert_pane(gen_view(PaneKind::Body));
-            tiles.insert_horizontal_tile(vec![auth, params, headers, body])
-        });
-
-        let mut response_tabs = vec![];
-        response_tabs.push({
-            let left = tiles.insert_pane(gen_view(PaneKind::ResponseStats));
-            let middle = tiles.insert_pane(gen_view(PaneKind::ResponseHeaders));
-            let right = tiles.insert_pane(gen_view(PaneKind::ResponseBody));
-
-            tiles.insert_horizontal_tile(vec![left, middle, right])
-        });
-
-        let request_container = tiles.insert_tab_tile(request_tabs);
-        let response_container = tiles.insert_tab_tile(response_tabs);
-        let root = tiles.insert_vertical_tile(vec![request_container, response_container]);
-
-        let request_tree = egui_tiles::Tree::new("request_tree", root, tiles);
+        let built_in_layouts = vec![
+            crate::layout::create_default(),
+            crate::layout::create_postman(),
+            crate::layout::create_bruno(),
+        ];
 
         let mut state = Vec::with_capacity(10);
         let request_id = RequestId::next();
@@ -90,7 +70,8 @@ impl Default for AppState {
         Self {
             state: state,
             active_request_id: request_id,
-            request_tree: request_tree,
+            layouts: built_in_layouts,
+            selected_layout_index: 0,
             params_view: Default::default(),
             body_reader_view: Default::default(),
         }
@@ -168,10 +149,40 @@ impl AppState {
             .exact_height(32.0)
             .show_separator_line(true)
             .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    // Layout selection dropdown
+                    // -------------------------
+                    let selected_layout = self.layouts.get(self.selected_layout_index).unwrap();
+                    ui.label("Selected Layout: ");
+                    let response = ui.button(format!("{} \u{e5c5}", &selected_layout.name));
+                    let popup = egui::Popup::menu(&response)
+                        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+                    let popup_id = popup.get_id();
+                    popup.show(|ui| {
+                        for (idx, layout) in self.layouts.iter().enumerate() {
+                            if ui
+                                .selectable_value(
+                                    &mut self.selected_layout_index,
+                                    idx,
+                                    &layout.name,
+                                )
+                                .clicked()
+                            {
+                                Popup::close_id(ctx, popup_id);
+                            }
+                        }
+                        ui.separator();
 
-                // egui::ComboBox::from_label("Theme").show_ui(ui, |ui| {
-                //     ui.selectable_label(ctx.theme() == Theme::, "Dark", text)
-                // })
+                        if ui.button("Create new").clicked() {
+                            let name = format!("Custom ({})", self.layouts.len() - 3 + 1);
+                            let mut new_layout = crate::layout::create_default();
+                            new_layout.name = name;
+                            self.layouts.push(new_layout);
+                        }
+                    });
+
+                    // ----------------------------
+                });
                 // if let Some(new_theme) = ctx.theme().small_toggle_button(ui) {
                 //     ui.ctx().set_theme(new_theme);
                 // }
@@ -196,7 +207,11 @@ impl AppState {
 
             ui.collapsing("Tree", |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                let tree_debug = format!("{:#?}", self.request_tree);
+                let layout = self
+                    .layouts
+                    .get(self.selected_layout_index)
+                    .expect("atleast one layout should be there");
+                let tree_debug = format!("{:#?}", layout.tree);
                 ui.monospace(&tree_debug);
             });
 
@@ -303,15 +318,19 @@ impl AppState {
                 &mut self.params_view,
                 &mut self.body_reader_view,
             );
-            self.request_tree.ui(&mut tiles_behavior, ui);
+            let selected_layout = self
+                .layouts
+                .get_mut(self.selected_layout_index)
+                .expect("atleast one layout should be there");
+            selected_layout.tree.ui(&mut tiles_behavior, ui);
 
             if let Some((tile_id, pane_kind)) = tiles_behavior.add_child_to {
-                let pane_id = self
-                    .request_tree
+                let pane_id = selected_layout
+                    .tree
                     .tiles
                     .insert_pane(Pane::from_values(101, pane_kind));
 
-                let parent = self.request_tree.tiles.get_mut(tile_id).unwrap();
+                let parent = selected_layout.tree.tiles.get_mut(tile_id).unwrap();
 
                 match parent {
                     egui_tiles::Tile::Container(container) => {

@@ -10,6 +10,7 @@ pub mod cookies;
 mod core;
 mod header;
 mod http;
+mod layout;
 mod styles;
 pub mod tasks;
 mod tiles;
