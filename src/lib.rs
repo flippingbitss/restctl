@@ -3,7 +3,10 @@ mod app;
 pub mod async_runtime;
 mod auth;
 mod components;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub mod cookies;
+
 mod core;
 mod header;
 mod http;

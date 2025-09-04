@@ -3,7 +3,10 @@ use std::sync::Arc;
 use egui::{Frame, TextWrapMode, Theme, ThemePreference};
 
 use crate::async_runtime::{self, AsyncRuntimeHandle};
+
+#[cfg(not(target_arch = "wasm32"))]
 use crate::cookies::BasicCookieStore;
+
 use crate::{
     auth,
     components::{body_reader_view::BodyReaderView, params_editor_view::ParamsEditorView},
@@ -42,6 +45,7 @@ pub struct AppState {
 }
 
 pub struct GlobalContext {
+    #[cfg(not(target_arch = "wasm32"))]
     pub cookie_jar: Arc<BasicCookieStore>,
     pub http_client: reqwest::Client,
     pub async_runtime: async_runtime::AsyncRuntimeHandle,
@@ -110,14 +114,24 @@ impl App {
         // }
         // prefer dark theme by default
         cc.egui_ctx.set_theme(ThemePreference::Dark);
+
+        #[cfg(not(target_arch = "wasm32"))]
         let cookie_jar = Arc::new(BasicCookieStore::new());
+        #[cfg(not(target_arch = "wasm32"))]
+        let client = reqwest::ClientBuilder::new()
+            .cookie_provider(cookie_jar.clone())
+            .build()
+            .unwrap();
+
+        #[cfg(target_arch = "wasm32")]
+        let client = reqwest::Client::new();
+        // let cookie_jar = Arc::new(BasicCookieStore::new());
         App {
             global_context: GlobalContext {
+                #[cfg(not(target_arch = "wasm32"))]
                 cookie_jar: cookie_jar.clone(),
-                http_client: reqwest::Client::builder()
-                    .cookie_provider(cookie_jar)
-                    .build()
-                    .unwrap(),
+
+                http_client: client,
                 async_runtime: async_runtime_handle,
             },
             state: Default::default(),
