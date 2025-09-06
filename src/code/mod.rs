@@ -1,9 +1,9 @@
-pub mod cursor_range;
-pub mod editor;
-pub mod epaint;
-pub mod output;
-pub mod state;
-pub mod text_buffer;
-pub mod text_cursor_state;
-pub mod text_layout;
-pub mod text_layout_types;
+mod builder;
+mod output;
+mod state;
+mod text_buffer;
+
+pub use {
+    builder::TextEdit, egui::text_selection::TextCursorState, output::TextEditOutput,
+    state::TextEditState, text_buffer::TextBuffer,
+};

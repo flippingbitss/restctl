@@ -22,6 +22,7 @@ fn main() -> eframe::Result {
         native_options,
         Box::new(|cc| {
             restctl::customize_app_styles(cc);
+            cc.egui_ctx.options_mut(|c| c.zoom_factor = 2.0);
             // cc.egui_ctx.set_theme(egui::Theme::Light);
             Ok(Box::new(restctl::App::new(cc)))
         }),

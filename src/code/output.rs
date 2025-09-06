@@ -17,7 +17,7 @@ pub struct TextEditOutput {
     pub text_clip_rect: egui::Rect,
 
     /// The state we stored after the run.
-    pub state: super::state::TextEditState,
+    pub state: super::TextEditState,
 
     /// Where the text cursor is.
     pub cursor_range: Option<CCursorRange>,

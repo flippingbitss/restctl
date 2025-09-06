@@ -40,6 +40,14 @@ pub struct TextEditState {
     #[serde(skip)]
     pub(crate) undoer: Arc<Mutex<TextEditUndoer>>,
 
+    // If IME candidate window is shown on this text edit.
+    #[serde(skip)]
+    pub(crate) ime_enabled: bool,
+
+    // cursor range for IME candidate.
+    #[serde(skip)]
+    pub(crate) ime_cursor_range: CCursorRange,
+
     // Visual offset when editing singleline text bigger than the width.
     #[serde(skip)]
     pub(crate) singleline_offset: f32,

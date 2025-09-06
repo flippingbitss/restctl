@@ -8,34 +8,6 @@ const SAMPLE_JSON: &'static str = r#"{"web-app": {
         "configGlossary:adminEmail": "ksm@pobox.com",
         "configGlossary:poweredBy": "Cofax",
         "configGlossary:poweredByIcon": "/images/cofax.gif",
-        "configGlossary:staticPath": "/content/static",
-        "templateProcessorClass": "org.cofax.WysiwygTemplate",
-        "templateLoaderClass": "org.cofax.FilesTemplateLoader",
-        "templatePath": "templates",
-        "templateOverridePath": "",
-        "defaultListTemplate": "listTemplate.htm",
-        "defaultFileTemplate": "articleTemplate.htm",
-        "useJSP": false,
-        "jspListTemplate": "listTemplate.jsp",
-        "jspFileTemplate": "articleTemplate.jsp",
-        "cachePackageTagsTrack": 200,
-        "cachePackageTagsStore": 200,
-        "cachePackageTagsRefresh": 60,
-        "cacheTemplatesTrack": 100,
-        "cacheTemplatesStore": 50,
-        "cacheTemplatesRefresh": 15,
-        "cachePagesTrack": 200,
-        "cachePagesStore": 100,
-        "cachePagesRefresh": 10,
-        "cachePagesDirtyRead": 10,
-        "searchEngineListTemplate": "forSearchEnginesList.htm",
-        "searchEngineFileTemplate": "forSearchEngines.htm",
-        "searchEngineRobotsDb": "WEB-INF/robots.db",
-        "useDataStore": true,
-        "dataStoreClass": "org.cofax.SqlDataStore",
-        "redirectionClass": "org.cofax.SqlRedirection",
-        "dataStoreName": "cofax",
-        "dataStoreDriver": "com.microsoft.jdbc.sqlserver.SQLServerDriver",
         "dataStoreUrl": "jdbc:microsoft:sqlserver://LOCALHOST:1433;DatabaseName=goon",
         "dataStoreUser": "sa",
         "dataStorePassword": "dataStoreTestQuery",
@@ -90,19 +62,13 @@ const SAMPLE_JSON: &'static str = r#"{"web-app": {
 use egui::{Frame, ThemePreference, util::History};
 use ropey::Rope;
 
-use crate::{
-    code::{self, text_buffer::RopeBuffer},
-    text_edit,
-};
+use crate::{code, text_edit};
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
     view: CodeEditorView,
-
-    #[serde[skip]]
-    source: RopeBuffer,
-
     frame_history: History<f32>,
     source_text_edit: String,
 }
@@ -113,7 +79,7 @@ struct CodeEditorView(usize);
 impl Default for App {
     fn default() -> Self {
         Self {
-            source: RopeBuffer { rope: Rope::from_str(SAMPLE_JSON) },
+            // source: RopeBuffer { rope: Rope::from_str(SAMPLE_JSON) },
             view: CodeEditorView::default(),
             source_text_edit: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris vehicula pretium ligula bibendum varius. Nulla diam elit, dictum vitae ultricies quis, pretium non nulla. Integer eget nulla et felis vehicula faucibus vitae eget eros. Nam diam magna, ullamcorper a arcu nec, lobortis vulputate justo. Quisque sed congue lacus. Fusce ullamcorper porttitor aliquam. Donec ultrices scelerisque ligula ut auctor. Maecenas sit amet pharetra urna, at dictum urna. Fusce vel tortor ut purus pellentesque gravida sit amet malesuada urna. Suspendisse id mi eu risus vestibulum feugiat at in ante. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Etiam vitae tincidunt nulla. Aenean eu quam neque. Cras enim sem, viverra sit amet tortor sit amet, aliquet pellentesque nibh.".to_owned(),
             frame_history: History::new(5..20, 2.0),
@@ -177,7 +143,6 @@ impl App {
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .desired_rows(5)
-                    .char_limit(200)
                     .frame(false)
                     .hint_text("Enter Code");
                 ui.add(widget);
@@ -188,7 +153,9 @@ impl App {
                 // } else {
                 //     self.source += "a";
                 // }
-                let code_widget = code::editor::TextEdit::new(&mut self.source);
+                let code_widget = code::TextEdit::code(&mut self.source_text_edit)
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(10);
                 code_widget.show(ui);
             });
     }
