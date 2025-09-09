@@ -19,8 +19,11 @@ use egui::{
     text_selection::{CCursorRange, text_cursor_state::cursor_rect, visuals::paint_text_selection},
     vec2,
 };
+use tree_sitter::{Language, ParseOptions, Point, ffi::TSInput};
 
-use super::{TextEditOutput, TextEditState};
+use crate::code::{
+    autocomplete::autocomplete_at_cursor, output::TextEditOutput, state::TextEditState,
+};
 
 type LayouterFn<'t> = &'t mut dyn FnMut(&Ui, &dyn TextBuffer, f32) -> Arc<Galley>;
 
@@ -69,9 +72,15 @@ type LayouterFn<'t> = &'t mut dyn FnMut(&Ui, &dyn TextBuffer, f32) -> Arc<Galley
 /// The background color of a [`crate::TextEdit`] is [`crate::Visuals::text_edit_bg_color`] or can be set with [`crate::TextEdit::background_color`].
 #[must_use = "You should put this widget in a ui with `ui.add(widget);`"]
 pub struct TextEdit<'t> {
-    text: &'t mut dyn TextBuffer,
     id: Option<Id>,
     id_salt: Option<Id>,
+    // ----- parsing and text buffer
+    text: &'t mut dyn TextBuffer,
+    parser: &'t mut tree_sitter::Parser,
+    tree: &'t mut tree_sitter::Tree,
+    // ----- for autocompletion based on treesitter
+    autocompletion: &'t mut AutoCompletionUiState,
+    // ----- sizes and appearance
     font_selection: FontSelection,
     layouter: Option<LayouterFn<'t>>,
     frame: bool,
@@ -79,6 +88,40 @@ pub struct TextEdit<'t> {
     desired_height_rows: usize,
     event_filter: EventFilter,
     return_key: Option<KeyboardShortcut>,
+}
+
+#[derive(Default)]
+pub struct AutoCompletionUiState {
+    debug_info: String,
+    requested: bool,
+    items: Vec<String>,
+}
+
+pub struct JsonSource {
+    parser: tree_sitter::Parser,
+    tree: tree_sitter::Tree,
+    buffer: String,
+    dirty: bool,
+    incremental: bool,
+}
+
+impl JsonSource {
+    pub fn new() -> Self {
+        Self::text(String::new())
+    }
+
+    pub fn text(buffer: String) -> Self {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&tree_sitter_json::LANGUAGE.into());
+        let tree = parser.parse(&buffer, None).unwrap();
+        Self {
+            parser,
+            tree,
+            buffer,
+            dirty: false,
+            incremental: true,
+        }
+    }
 }
 
 impl WidgetWithState for TextEdit<'_> {
@@ -97,9 +140,14 @@ impl TextEdit<'_> {
 
 impl<'t> TextEdit<'t> {
     /// A [`TextEdit`] for multiple lines. Pressing enter key will create a new line by default (can be changed with [`return_key`](TextEdit::return_key)).
-    pub fn code(text: &'t mut dyn TextBuffer) -> Self {
+    pub fn json(source: &'t mut JsonSource, autocompletion: &'t mut AutoCompletionUiState) -> Self {
+        // // We only support JSON btw because that should be enough, right ? right ?
+        // parser.set_language(&tree_sitter_json::LANGUAGE.into());
         Self {
-            text,
+            text: &mut source.buffer,
+            parser: &mut source.parser,
+            tree: &mut source.tree,
+            autocompletion: autocompletion,
             id: None,
             id_salt: None,
             font_selection: TextStyle::Monospace.into(),
@@ -252,6 +300,33 @@ impl TextEdit<'_> {
         let frame = self.frame;
         let where_to_put_background = ui.painter().add(Shape::Noop);
         let background_color = ui.visuals().text_edit_bg_color();
+
+        fn print_node<'a>(
+            result: &mut String,
+            node: tree_sitter::Node<'a>,
+            source: &str,
+            indent: usize,
+        ) {
+            let kind = node.kind();
+            let text = &source[node.byte_range()];
+            result.push_str(&format!("{}{kind} ({:?})\n", "  ".repeat(indent), text));
+
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                print_node(result, child, source, indent + 1);
+            }
+        }
+
+        let mut tree_str = String::new();
+        print_node(&mut tree_str, self.tree.root_node(), self.text.as_str(), 0);
+
+        // ui.label(tree_str);
+        ui.label(self.tree.root_node().to_sexp());
+        ui.separator();
+
+        ui.label(format!("Debug Info: {}", self.autocompletion.debug_info));
+        ui.separator();
+
         let output = self.show_content(ui);
 
         if frame {
@@ -293,9 +368,11 @@ impl TextEdit<'_> {
 
     fn show_content(self, ui: &mut Ui) -> TextEditOutput {
         let TextEdit {
-            text,
             id,
             id_salt,
+            text,
+            parser,
+            tree,
             font_selection,
             layouter,
             frame: _,
@@ -303,6 +380,7 @@ impl TextEdit<'_> {
             desired_height_rows,
             event_filter,
             return_key,
+            autocompletion,
         } = self;
 
         let text_color = ui
@@ -367,7 +445,7 @@ impl TextEdit<'_> {
         let mut response = ui.interact(outer_rect, id, sense);
         response.intrinsic_size = Some(Vec2::new(desired_width, desired_outer_size.y));
 
-        log::info!("text_edit response {:?}", response);
+        // log::info!("text_edit response {:?}", response);
 
         ui.painter().rect_stroke(
             response.rect,
@@ -434,6 +512,7 @@ impl TextEdit<'_> {
                 text,
                 &mut galley,
                 layouter,
+                autocompletion,
                 id,
                 wrap_width,
                 default_cursor_range,
@@ -443,6 +522,14 @@ impl TextEdit<'_> {
 
             if changed {
                 response.mark_changed();
+
+                // TODO: parse incrementally by applying edits to the old tree instead
+                // for MVP, we are parsing from scratch on every event
+                if let Some(new_tree) = parser.parse(text.as_str(), None) {
+                    *tree = new_tree;
+                }
+
+                // self.tree = self.parser.parse(self.text);
             }
             cursor_range = Some(new_cursor_range);
         }
@@ -456,6 +543,40 @@ impl TextEdit<'_> {
         } else {
             false
         };
+
+        if autocompletion.requested {
+            let cursor = cursor_range.and_then(|cr| cr.single());
+            // Only if we are typing we show completions,
+            // not during selections, cuts/deletes etc
+            if let Some(cursor) = cursor {
+                let coord = galley.layout_from_cursor(cursor);
+                let mut debug_info = String::new();
+                debug_info.push_str(&format!(
+                    "Cursor row: {}, column: {}\n",
+                    coord.row, coord.column
+                ));
+
+                let root = tree.root_node();
+                let cursor_location = Point::new(coord.row, coord.column);
+                let text_buffer = text.as_str();
+
+                if let Some(node) =
+                    root.named_descendant_for_point_range(cursor_location, cursor_location)
+                {
+                    debug_info.push_str(&format!("Active node: {}\n", node.kind()));
+                    let slice = &text_buffer[node.byte_range()];
+                    debug_info.push_str(&format!("Active range value: {}\n", slice));
+                }
+                // get 2d cursor
+                // get active node
+                // get active json key from node range offset and galley
+                let result =
+                    autocomplete_at_cursor(text_buffer, root, cursor.index, cursor_location);
+                debug_info.push_str(&format!("Result from string like node: {}\n", result));
+
+                autocompletion.debug_info = debug_info;
+            }
+        }
 
         if ui.is_rect_visible(rect) {
             let has_focus = ui.memory(|mem| mem.has_focus(id));
@@ -582,6 +703,57 @@ impl TextEdit<'_> {
     }
 }
 
+// [Str("abc"), Str("def")]
+//
+// enum JsonValue {
+//     Null,
+//     Num(i32),
+//     Object(Box<JsonValue>),
+//     Array(Vec<JsonValue>),
+// }
+//
+// struct JsonKey {
+//     name: String,
+//     values: Vec<JsonValue>,
+// }
+//
+fn create_dummy_graph() {}
+
+fn compute_path_to_active_string<'a>(
+    root: tree_sitter::Node<'a>,
+    text_buffer: &str,
+    byte_offset: usize,
+    cursor_col: usize,
+    cursor_row: usize,
+) -> Option<Vec<String>> {
+    let cursor_point = Point::new(cursor_row, cursor_col);
+    let active_node = root.named_descendant_for_point_range(cursor_point, cursor_point);
+    if let Some(node) = active_node {
+        if node.kind() == "string" {
+            // within quotes now
+            let prefix = node
+                .child_by_field_name("string_content")
+                .map(|contents_node| &text_buffer[contents_node.byte_range()])
+                .unwrap_or("");
+
+            let mut path = Vec::new();
+
+            // figure out path for this node
+            let mut current_node = node.parent();
+            while let Some(current) = current_node {
+                path.push(current.kind().to_owned());
+                current_node = current.parent();
+            }
+
+            path.reverse();
+
+            return Some(path);
+        }
+    }
+
+    None
+}
+
 fn mask_if_password(is_password: bool, text: &str) -> String {
     fn mask_password(text: &str) -> String {
         std::iter::repeat_n(
@@ -608,6 +780,7 @@ fn events(
     text: &mut dyn TextBuffer,
     galley: &mut Arc<Galley>,
     layouter: &mut dyn FnMut(&Ui, &dyn TextBuffer, f32) -> Arc<Galley>,
+    autocompletion: &mut AutoCompletionUiState,
     id: Id,
     wrap_width: f32,
     default_cursor_range: CCursorRange,
@@ -669,6 +842,8 @@ fn events(
                     let mut ccursor = text.delete_selected(&cursor_range);
 
                     text.insert_text_at(&mut ccursor, text_to_insert, usize::MAX);
+
+                    autocompletion.requested = true;
 
                     Some(CCursorRange::one(ccursor))
                 } else {

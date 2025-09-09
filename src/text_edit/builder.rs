@@ -571,7 +571,7 @@ impl TextEdit<'_> {
         let mut response = ui.interact(outer_rect, id, sense);
         response.intrinsic_size = Some(Vec2::new(desired_width, desired_outer_size.y));
 
-        log::info!("text_edit response {:?}", response);
+        // log::info!("text_edit response {:?}", response);
 
         ui.painter().rect_stroke(
             response.rect,

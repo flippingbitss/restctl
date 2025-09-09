@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use egui::text::CCursorRange;
 
+use crate::code::state::TextEditState;
+
 /// The output from a [`TextEdit`](crate::TextEdit).
 pub struct TextEditOutput {
     /// The interaction response.
@@ -17,7 +19,7 @@ pub struct TextEditOutput {
     pub text_clip_rect: egui::Rect,
 
     /// The state we stored after the run.
-    pub state: super::TextEditState,
+    pub state: TextEditState,
 
     /// Where the text cursor is.
     pub cursor_range: Option<CCursorRange>,

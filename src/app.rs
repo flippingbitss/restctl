@@ -62,25 +62,31 @@ const SAMPLE_JSON: &'static str = r#"{"web-app": {
 use egui::{Frame, ThemePreference, util::History};
 use ropey::Rope;
 
-use crate::{code, text_edit};
+use crate::{
+    code::{self, builder::JsonSource, editor::BodyEditorView},
+    text_edit,
+};
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
-    view: CodeEditorView,
     frame_history: History<f32>,
     source_text_edit: String,
-}
 
-#[derive(Default, serde::Deserialize, serde::Serialize)]
-struct CodeEditorView(usize);
+    #[serde(skip)]
+    json_source: code::builder::JsonSource,
+
+    #[serde(skip)]
+    body_editor_view: BodyEditorView,
+}
 
 impl Default for App {
     fn default() -> Self {
         Self {
             // source: RopeBuffer { rope: Rope::from_str(SAMPLE_JSON) },
-            view: CodeEditorView::default(),
+            body_editor_view: BodyEditorView::default(),
+            json_source: JsonSource::text(String::from(r#"{"user": {"address": {"city": ""}}}"#)),
             source_text_edit: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris vehicula pretium ligula bibendum varius. Nulla diam elit, dictum vitae ultricies quis, pretium non nulla. Integer eget nulla et felis vehicula faucibus vitae eget eros. Nam diam magna, ullamcorper a arcu nec, lobortis vulputate justo. Quisque sed congue lacus. Fusce ullamcorper porttitor aliquam. Donec ultrices scelerisque ligula ut auctor. Maecenas sit amet pharetra urna, at dictum urna. Fusce vel tortor ut purus pellentesque gravida sit amet malesuada urna. Suspendisse id mi eu risus vestibulum feugiat at in ante. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Etiam vitae tincidunt nulla. Aenean eu quam neque. Cras enim sem, viverra sit amet tortor sit amet, aliquet pellentesque nibh.".to_owned(),
             frame_history: History::new(5..20, 2.0),
         }
@@ -153,10 +159,7 @@ impl App {
                 // } else {
                 //     self.source += "a";
                 // }
-                let code_widget = code::TextEdit::code(&mut self.source_text_edit)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(10);
-                code_widget.show(ui);
+                self.body_editor_view.show(ui, ctx, &mut self.json_source);
             });
     }
 }

@@ -4,7 +4,12 @@
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    // env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
+    log::debug!("test");
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
