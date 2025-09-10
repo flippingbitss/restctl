@@ -1,7 +1,7 @@
 use std::{sync::Arc, usize};
 
 use egui::{
-    CornerRadius, Stroke,
+    CornerRadius, Layout, RectAlign, Stroke,
     emath::{Rect, TSTransform},
 };
 use epaint::{
@@ -92,6 +92,7 @@ pub struct TextEdit<'t> {
 
 #[derive(Default)]
 pub struct AutoCompletionUiState {
+    selected_index: usize,
     debug_info: String,
     requested: bool,
     items: Vec<String>,
@@ -570,10 +571,11 @@ impl TextEdit<'_> {
                 // get 2d cursor
                 // get active node
                 // get active json key from node range offset and galley
-                let result =
+                let (info_str, items) =
                     autocomplete_at_cursor(text_buffer, root, cursor.index, cursor_location);
-                debug_info.push_str(&format!("Result from string like node: {}\n", result));
+                debug_info.push_str(&format!("Result from string like node: {}\n", info_str));
 
+                autocompletion.items = items;
                 autocompletion.debug_info = debug_info;
             }
         }
@@ -647,6 +649,9 @@ impl TextEdit<'_> {
                             });
                         });
                     }
+
+                    // Draw autocomplete UI
+                    show_autocomplete_menu(ui, primary_cursor_rect, autocompletion);
                 }
             }
         }
@@ -700,6 +705,36 @@ impl TextEdit<'_> {
             state,
             cursor_range,
         }
+    }
+}
+
+fn show_autocomplete_menu(
+    ui: &mut Ui,
+    cursor_rect: Rect,
+    autocompletion: &mut AutoCompletionUiState,
+) {
+    if autocompletion.requested && !autocompletion.items.is_empty() {
+        egui::Popup::new(
+            "autocompletion_popup".into(),
+            ui.ctx().clone(),
+            cursor_rect,
+            ui.layer_id(),
+        )
+        .kind(egui::PopupKind::Menu)
+        .align(RectAlign::BOTTOM_START)
+        .layout(Layout::top_down_justified(Align::Min))
+        .width(200.0)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            for (index, item) in autocompletion.items.iter_mut().enumerate() {
+                if ui
+                    .selectable_value(&mut autocompletion.selected_index, index, item.as_str())
+                    .clicked()
+                {
+                    autocompletion.requested = false;
+                }
+            }
+        });
     }
 }
 
@@ -849,6 +884,15 @@ fn events(
                 } else {
                     None
                 }
+            }
+            Event::Key {
+                key: Key::Space,
+                pressed: true,
+                modifiers,
+                ..
+            } if modifiers.command => {
+                autocompletion.requested = true;
+                None
             }
             Event::Key {
                 key: Key::Tab,

@@ -63,7 +63,7 @@ static DUMMY_JSON_SHAPE: LazyLock<JsonShapeGraphNode> = LazyLock::new(|| {
             JsonShapeGraphNode::leaf("email"),
             JsonShapeGraphNode::with_children("address", vec![
                 JsonShapeGraphNode::leaf("street"),
-                JsonShapeGraphNode::with_values("city", vec!["Toronto, Vancouver, Vaughan, Brampton"]),
+                JsonShapeGraphNode::with_values("city", vec!["Toronto", "Vancouver", "Vaughan", "Brampton"]),
                 JsonShapeGraphNode::leaf("zip"),
             ]),
         ]),
@@ -103,20 +103,25 @@ pub fn autocomplete_at_cursor<'a>(
     root: tree_sitter::Node<'a>,
     cursor_byte_offset: usize,
     cursor_point: tree_sitter::Point,
-) -> String {
+) -> (String, Vec<String>) {
     let query =
         build_completion_query_for_active_string(text, root, cursor_byte_offset, cursor_point);
     let mut info_str = String::new();
     info_str.push_str(&format!("Query: {:?}\n", query));
 
     let completions = query
-        .map(|value| get_autocompletion_tokens(value))
+        .map(|value| {
+            get_autocompletion_tokens(value)
+                .into_iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+        })
         .unwrap_or_default();
 
     // TODO: get rid the String and return modelled completion items
-    info_str.push_str(&format!("Completions: {:?}", completions));
+    info_str.push_str(&format!("Completions: {:?}", &completions));
 
-    info_str
+    (info_str, completions)
 }
 
 fn get_pair_as_key_value<'a>(node: Option<Node<'a>>) -> (Option<Node<'a>>, Option<Node<'a>>) {
