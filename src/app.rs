@@ -63,7 +63,9 @@ use egui::{Frame, ThemePreference, util::History};
 use ropey::Rope;
 
 use crate::{
-    code::{self, builder::JsonSource, editor::BodyEditorView},
+    code::{
+        self, autocomplete::get_autocompletion_tokens, builder::JsonSource, editor::BodyEditorView,
+    },
     text_edit,
 };
 
@@ -159,7 +161,10 @@ impl App {
                 // } else {
                 //     self.source += "a";
                 // }
-                self.body_editor_view.show(ui, ctx, &mut self.json_source);
+                self.body_editor_view
+                    .show(ui, ctx, &mut self.json_source, |query| {
+                        get_autocompletion_tokens(query)
+                    });
             });
     }
 }

@@ -3,6 +3,8 @@ use std::{cell::LazyCell, ops::Deref, sync::LazyLock};
 use egui::Align;
 use tree_sitter::{Node, Point};
 
+use crate::code::builder::AutoCompletionItem;
+
 #[derive(Debug)]
 enum JsonPathEntry<'a> {
     StringKey(&'a str),
@@ -16,9 +18,10 @@ enum CompletionQueryKind {
 }
 
 #[derive(Debug)]
-struct CompletionQuery<'a> {
+pub struct CompletionQuery<'a> {
     kind: CompletionQueryKind,
     path: Vec<JsonPathEntry<'a>>,
+    partial_input: Option<&'a str>,
 }
 
 #[derive(Debug)]
@@ -74,7 +77,7 @@ static DUMMY_JSON_SHAPE: LazyLock<JsonShapeGraphNode> = LazyLock::new(|| {
     ])
 });
 
-fn get_autocompletion_tokens(query: CompletionQuery) -> Vec<&'static str> {
+pub fn get_autocompletion_tokens(query: CompletionQuery) -> Vec<AutoCompletionItem> {
     let mut current = DUMMY_JSON_SHAPE.deref();
     let mut active_node = Some(current);
     for entry in query.path.iter() {
@@ -92,18 +95,31 @@ fn get_autocompletion_tokens(query: CompletionQuery) -> Vec<&'static str> {
     }
     match query.kind {
         CompletionQueryKind::ForKeys => active_node
-            .map(|node| node.children.iter().map(|c| c.name).collect::<Vec<_>>())
+            .map(|node| {
+                node.children
+                    .iter()
+                    .map(|c| AutoCompletionItem::title(c.name.to_owned()))
+                    .collect::<Vec<AutoCompletionItem>>()
+            })
             .unwrap_or_default(),
-        CompletionQueryKind::ForValues => active_node.map(|n| n.values.clone()).unwrap_or_default(),
+        CompletionQueryKind::ForValues => active_node
+            .map(|n| {
+                n.values
+                    .iter()
+                    .map(|&v| AutoCompletionItem::title(v.to_owned()))
+                    .collect::<Vec<AutoCompletionItem>>()
+            })
+            .unwrap_or_default(),
     }
 }
 
 pub fn autocomplete_at_cursor<'a>(
-    text: &str,
+    text: &'a str,
     root: tree_sitter::Node<'a>,
     cursor_byte_offset: usize,
     cursor_point: tree_sitter::Point,
-) -> (String, Vec<String>) {
+    autocompletion_fn: impl FnOnce(CompletionQuery<'a>) -> Vec<AutoCompletionItem>,
+) -> (String, Vec<AutoCompletionItem>) {
     let query =
         build_completion_query_for_active_string(text, root, cursor_byte_offset, cursor_point);
     let mut info_str = String::new();
@@ -111,15 +127,27 @@ pub fn autocomplete_at_cursor<'a>(
 
     let completions = query
         .map(|value| {
-            get_autocompletion_tokens(value)
+            let partial_input = value.partial_input;
+            autocompletion_fn(value)
                 .into_iter()
-                .map(|x| x.to_string())
-                .collect::<Vec<String>>()
+                .filter(|x| {
+                    let is_match = partial_input
+                        .map(|p| x.title.starts_with(p) && x.title.len() > p.len()) // if only a partial match
+                        .unwrap_or(true);
+                    is_match
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
     // TODO: get rid the String and return modelled completion items
-    info_str.push_str(&format!("Completions: {:?}", &completions));
+    info_str.push_str(&format!(
+        "Completions: {:?}",
+        completions
+            .iter()
+            .map(|x| x.title.as_str())
+            .collect::<Vec<_>>()
+    ));
 
     (info_str, completions)
 }
@@ -168,7 +196,7 @@ fn build_completion_query_for_active_string<'a>(
         }
 
         let prefix = match node.kind() {
-            "string" => node.named_child(0).map(|n| &text_buffer[node.byte_range()]),
+            "string" => node.named_child(0).map(|n| &text_buffer[n.byte_range()]),
             "string_content" => Some(&text_buffer[node.byte_range()]),
             _ => None,
         };
@@ -246,6 +274,7 @@ fn build_completion_query_for_active_string<'a>(
             return Some(CompletionQuery {
                 path,
                 kind: query_kind,
+                partial_input: prefix,
             });
         }
     }

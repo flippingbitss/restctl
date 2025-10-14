@@ -22,7 +22,9 @@ use egui::{
 use tree_sitter::{Language, ParseOptions, Point, ffi::TSInput};
 
 use crate::code::{
-    autocomplete::autocomplete_at_cursor, output::TextEditOutput, state::TextEditState,
+    autocomplete::{CompletionQuery, autocomplete_at_cursor},
+    output::TextEditOutput,
+    state::TextEditState,
 };
 
 type LayouterFn<'t> = &'t mut dyn FnMut(&Ui, &dyn TextBuffer, f32) -> Arc<Galley>;
@@ -79,7 +81,7 @@ pub struct TextEdit<'t> {
     parser: &'t mut tree_sitter::Parser,
     tree: &'t mut tree_sitter::Tree,
     // ----- for autocompletion based on treesitter
-    autocompletion: &'t mut AutoCompletionUiState,
+    autocompletion: &'t mut AutoCompletionState,
     // ----- sizes and appearance
     font_selection: FontSelection,
     layouter: Option<LayouterFn<'t>>,
@@ -88,14 +90,41 @@ pub struct TextEdit<'t> {
     desired_height_rows: usize,
     event_filter: EventFilter,
     return_key: Option<KeyboardShortcut>,
+    autocomplete_fn: Box<dyn Fn(CompletionQuery<'t>) -> Vec<AutoCompletionItem> + 't>,
+}
+
+pub struct AutoCompletionItem {
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+}
+
+impl AutoCompletionItem {
+    pub fn title(title: String) -> Self {
+        Self {
+            title,
+            subtitle: Default::default(),
+            description: Default::default(),
+        }
+    }
 }
 
 #[derive(Default)]
-pub struct AutoCompletionUiState {
-    selected_index: usize,
+pub struct AutoCompletionState {
     debug_info: String,
+    // ui state
+    selected_index: usize,
+    displaying: bool,
     requested: bool,
-    items: Vec<String>,
+    // data
+    items: Vec<AutoCompletionItem>,
+    // autocomplete_fn: Box<dyn Fn(CompletionQuery<'_>) -> Vec<&'m str>>,
+}
+
+impl AutoCompletionState {
+    pub fn should_display(&self) -> bool {
+        self.requested && !self.items.is_empty()
+    }
 }
 
 pub struct JsonSource {
@@ -141,14 +170,19 @@ impl TextEdit<'_> {
 
 impl<'t> TextEdit<'t> {
     /// A [`TextEdit`] for multiple lines. Pressing enter key will create a new line by default (can be changed with [`return_key`](TextEdit::return_key)).
-    pub fn json(source: &'t mut JsonSource, autocompletion: &'t mut AutoCompletionUiState) -> Self {
+    pub fn json(
+        source: &'t mut JsonSource,
+        autocompletion: &'t mut AutoCompletionState,
+        autocomplete_fn: impl Fn(CompletionQuery<'t>) -> Vec<AutoCompletionItem> + 't,
+    ) -> Self {
         // // We only support JSON btw because that should be enough, right ? right ?
         // parser.set_language(&tree_sitter_json::LANGUAGE.into());
         Self {
             text: &mut source.buffer,
             parser: &mut source.parser,
             tree: &mut source.tree,
-            autocompletion: autocompletion,
+            autocompletion,
+            autocomplete_fn: Box::new(autocomplete_fn),
             id: None,
             id_salt: None,
             font_selection: TextStyle::Monospace.into(),
@@ -160,7 +194,7 @@ impl<'t> TextEdit<'t> {
                 // moving the cursor is really important
                 horizontal_arrows: true,
                 vertical_arrows: true,
-                tab: false, // tab is used to change focus, not to insert a tab character
+                tab: true, // tab is used to change focus, not to insert a tab character
                 ..Default::default()
             },
             return_key: Some(KeyboardShortcut::new(Modifiers::NONE, Key::Enter)),
@@ -382,6 +416,7 @@ impl TextEdit<'_> {
             event_filter,
             return_key,
             autocompletion,
+            autocomplete_fn,
         } = self;
 
         let text_color = ui
@@ -533,6 +568,8 @@ impl TextEdit<'_> {
                 // self.tree = self.parser.parse(self.text);
             }
             cursor_range = Some(new_cursor_range);
+        } else {
+            // log::debug!("no focus");
         }
 
         let mut galley_pos = rect.left_top();
@@ -571,8 +608,13 @@ impl TextEdit<'_> {
                 // get 2d cursor
                 // get active node
                 // get active json key from node range offset and galley
-                let (info_str, items) =
-                    autocomplete_at_cursor(text_buffer, root, cursor.index, cursor_location);
+                let (info_str, items) = autocomplete_at_cursor(
+                    text_buffer,
+                    root,
+                    cursor.index,
+                    cursor_location,
+                    autocomplete_fn,
+                );
                 debug_info.push_str(&format!("Result from string like node: {}\n", info_str));
 
                 autocompletion.items = items;
@@ -711,10 +753,10 @@ impl TextEdit<'_> {
 fn show_autocomplete_menu(
     ui: &mut Ui,
     cursor_rect: Rect,
-    autocompletion: &mut AutoCompletionUiState,
+    autocompletion: &mut AutoCompletionState,
 ) {
-    if autocompletion.requested && !autocompletion.items.is_empty() {
-        egui::Popup::new(
+    if autocompletion.should_display() {
+        let popup = egui::Popup::new(
             "autocompletion_popup".into(),
             ui.ctx().clone(),
             cursor_rect,
@@ -724,14 +766,19 @@ fn show_autocomplete_menu(
         .align(RectAlign::BOTTOM_START)
         .layout(Layout::top_down_justified(Align::Min))
         .width(200.0)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-        .show(|ui| {
+        .close_behavior(egui::PopupCloseBehavior::IgnoreClicks);
+
+        let popup_id = popup.get_id();
+
+        let response = popup.show(|ui| {
+            autocompletion.displaying = true;
             for (index, item) in autocompletion.items.iter_mut().enumerate() {
-                if ui
-                    .selectable_value(&mut autocompletion.selected_index, index, item.as_str())
-                    .clicked()
-                {
+                let response =
+                    ui.selectable_value(&mut autocompletion.selected_index, index, &item.title);
+
+                if response.clicked() {
                     autocompletion.requested = false;
+                    autocompletion.displaying = false;
                 }
             }
         });
@@ -815,7 +862,7 @@ fn events(
     text: &mut dyn TextBuffer,
     galley: &mut Arc<Galley>,
     layouter: &mut dyn FnMut(&Ui, &dyn TextBuffer, f32) -> Arc<Galley>,
-    autocompletion: &mut AutoCompletionUiState,
+    autocompletion: &mut AutoCompletionState,
     id: Id,
     wrap_width: f32,
     default_cursor_range: CCursorRange,
@@ -879,6 +926,7 @@ fn events(
                     text.insert_text_at(&mut ccursor, text_to_insert, usize::MAX);
 
                     autocompletion.requested = true;
+                    autocompletion.selected_index = 0;
 
                     Some(CCursorRange::one(ccursor))
                 } else {
@@ -900,14 +948,20 @@ fn events(
                 modifiers,
                 ..
             } => {
-                let mut ccursor = text.delete_selected(&cursor_range);
-                if modifiers.shift {
-                    // TODO(emilk): support removing indentation over a selection?
-                    text.decrease_indentation(&mut ccursor);
+                if autocompletion.displaying {
+                    let size = autocompletion.items.len();
+                    autocompletion.selected_index = (autocompletion.selected_index + 1) % size;
+                    None
                 } else {
-                    text.insert_text_at(&mut ccursor, "\t", usize::MAX);
+                    let mut ccursor = text.delete_selected(&cursor_range);
+                    if modifiers.shift {
+                        // TODO(emilk): support removing indentation over a selection?
+                        text.decrease_indentation(&mut ccursor);
+                    } else {
+                        text.insert_text_at(&mut ccursor, "\t", usize::MAX);
+                    }
+                    Some(CCursorRange::one(ccursor))
                 }
-                Some(CCursorRange::one(ccursor))
             }
             Event::Key {
                 key,
@@ -918,10 +972,24 @@ fn events(
                 *key == return_key.logical_key && modifiers.matches_logically(return_key.modifiers)
             }) =>
             {
-                let mut ccursor = text.delete_selected(&cursor_range);
-                text.insert_text_at(&mut ccursor, "\n", usize::MAX);
-                // TODO(emilk): if code editor, auto-indent by same leading tabs, + one if the lines end on an opening bracket
-                Some(CCursorRange::one(ccursor))
+                if autocompletion.displaying {
+                    let item = autocompletion
+                        .items
+                        .get(autocompletion.selected_index)
+                        .unwrap();
+                    let mut ccursor = text.delete_selected(&cursor_range);
+                    text.insert_text_at(&mut ccursor, &item.title, usize::MAX);
+
+                    autocompletion.requested = false;
+                    autocompletion.displaying = false;
+
+                    Some(CCursorRange::one(ccursor))
+                } else {
+                    let mut ccursor = text.delete_selected(&cursor_range);
+                    text.insert_text_at(&mut ccursor, "\n", usize::MAX);
+                    // TODO(emilk): if code editor, auto-indent by same leading tabs, + one if the lines end on an opening bracket
+                    Some(CCursorRange::one(ccursor))
+                }
             }
 
             Event::Key {
